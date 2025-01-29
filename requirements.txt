@@ -1,0 +1,6 @@
+flask
+requests
+dropbox
+beautifulsoup4
+threading
+time
