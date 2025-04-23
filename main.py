@@ -8,16 +8,15 @@ from bs4 import BeautifulSoup
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-@app.route("/")
-def index():
-    return "Canadian Assesment Reports Server is running."
-
-
 app = Flask(__name__)
 # Reuse HTTP session for connection pooling
 session = requests.Session()
 # ThreadPool for parallel PDF downloads
 executor = ThreadPoolExecutor(max_workers=5)
+
+@app.route("/")
+def index():
+    return "Canadian AR Server is running."
 
 
 def get_dropbox_access_token() -> str:
@@ -106,7 +105,6 @@ def _upload_pdf(dbx: dropbox.Dropbox, url: str, dest_path: str) -> bool:
         app.logger.error(f"Failed to download or upload {url}: {e}")
         return False
 
-
 @app.route("/download_gm", methods=["POST"])
 def download_gm() -> tuple:
     """
@@ -151,7 +149,6 @@ def download_gm() -> tuple:
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
-
 @app.errorhandler(Exception)
 def handle_all_errors(e):
     """
@@ -159,7 +156,6 @@ def handle_all_errors(e):
     """
     app.logger.error(f"Unhandled exception: {e}", exc_info=True)
     return jsonify(error="Internal server error"), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 81)))
