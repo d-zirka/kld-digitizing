@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify
 from bs4 import BeautifulSoup
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import product
 
 app = Flask(__name__)
 # Reuse HTTP session for connection pooling
@@ -16,7 +17,7 @@ executor = ThreadPoolExecutor(max_workers=5)
 
 @app.route("/")
 def index():
-    return "GM Reports Server is running."
+    return "Canadian AR Server is running! 🚀"
 
 
 def get_dropbox_access_token() -> str:
@@ -52,23 +53,24 @@ def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
         dbx.files_create_folder_v2(path)
 
 
-def download_gm_generic(
-    gm_number: str,
+def download_ar_generic(
+    ar_number: str,
     province: str,
     project: str,
     list_page_url: str,
-    url_transform,
+    base_url: str = None
 ) -> int:
     """
-    Generic GM report downloader: scrape page, find PDF links, upload in parallel.
-    - list_page_url: full URL to fetch HTML listing PDFs
-    - url_transform: function(pdf_href) -> absolute PDF URL
+    Generic AR report downloader: scrape page, find PDF links, upload in parallel.
+    If base_url is provided, constructs URLs: base_url/ar_number/filename
+    Else uses list_page_url + href.
     Returns number of PDFs downloaded.
     """
     resp = session.get(list_page_url)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
+    # collect hrefs ending with any case variant of .pdf
     pdf_links = [a["href"] for a in soup.find_all("a", href=True)
                  if a["href"].lower().endswith(".pdf")]
     if not pdf_links:
@@ -76,67 +78,62 @@ def download_gm_generic(
 
     access_token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(access_token)
-    base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{gm_number}"
+    base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
     ensure_folder(dbx, base_folder)
     ensure_folder(dbx, base_folder + "/Instructions")
     ensure_folder(dbx, base_folder + "/Source Data")
 
-    futures = []
-    for href in pdf_links:
-        pdf_url = url_transform(href)
-        filename = os.path.basename(href)
-        dest = base_folder + "/Source Data/" + filename
-        futures.append(executor.submit(_upload_pdf, dbx, pdf_url, dest))
-
     count = 0
-    for future in as_completed(futures):
-        if future.result():
-            count += 1
+    for href in pdf_links:
+        filename = os.path.basename(href)
+        name_root, ext = os.path.splitext(filename)
+        # generate all case combinations for extension letters
+        ext_chars = ext[1:]  # strip dot
+        variants = [''.join(p) for p in product(*[(c.lower(), c.upper()) for c in ext_chars])]
+
+        # attempt each variant
+        for variant in variants:
+            if base_url:
+                pdf_url = f"{base_url}/{ar_number}/{name_root}.{variant}"
+            else:
+                pdf_url = list_page_url + href
+            try:
+                r = session.get(pdf_url)
+                r.raise_for_status()
+                dest = base_folder + "/Source Data/" + os.path.basename(pdf_url)
+                dbx.files_upload(r.content, dest, mode=WriteMode.overwrite)
+                count += 1
+                break
+            except requests.HTTPError:
+                continue
+            except Exception as e:
+                app.logger.error(f"Failed to download or upload {pdf_url}: {e}")
+                break
     return count
-
-
-def _upload_pdf(dbx: dropbox.Dropbox, url: str, dest_path: str) -> bool:
-    try:
-        r = session.get(url)
-        r.raise_for_status()
-        dbx.files_upload(r.content, dest_path, mode=WriteMode.overwrite)
-        return True
-    except Exception as e:
-        app.logger.error(f"Failed to download or upload {url}: {e}")
-        return False
 
 @app.route("/download_gm", methods=["POST"])
 def download_gm() -> tuple:
     """
-    Download GM reports for Quebec or Ontario.
+    Download AR reports for Quebec or Ontario.
     """
     data = request.get_json(force=True)
-    gm_number = data.get("gm_number", "").strip()
+    ar_number = data.get("ar_number", "").strip()
     province = data.get("province", "").strip()
     project = data.get("project", "").strip()
 
-    if not all([gm_number, province, project]):
+    if not all([ar_number, province, project]):
         return jsonify(error="Missing required parameters"), 400
 
     try:
-        if province == "Quebec" and gm_number.upper().startswith("GM"):
-            url = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{gm_number}/"
-            downloaded = download_gm_generic(
-                gm_number, province, project,
-                url,
-                lambda href: url + href
-            )
+        if province == "Quebec" and ar_number.upper().startswith("GM"):
+            list_page = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
+            downloaded = download_ar_generic(ar_number, province, project, list_page)
         elif province == "Ontario":
-            page_url = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{gm_number}.html"
-            base_url = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
-            downloaded = download_gm_generic(
-                gm_number, province, project,
-                page_url,
-                # Construct correct PDF URL: base_url/{gm_number}/{filename}
-                lambda href: f"{base_url}/{gm_number}/{os.path.basename(href)}"
-            )
+            list_page = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{ar_number}.html"
+            blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
+            downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
         else:
-            return jsonify(error="Invalid province or GM number format"), 400
+            return jsonify(error="Invalid province or AR number format"), 400
 
         if downloaded > 0:
             return jsonify(message=f"Downloaded {downloaded} PDFs"), 200
