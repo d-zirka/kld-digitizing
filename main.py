@@ -16,7 +16,7 @@ executor = ThreadPoolExecutor(max_workers=5)
 
 @app.route("/")
 def index():
-    return "Canadian AR Server is running."
+    return "GM Reports Server is running."
 
 
 def get_dropbox_access_token() -> str:
@@ -132,7 +132,8 @@ def download_gm() -> tuple:
             downloaded = download_gm_generic(
                 gm_number, province, project,
                 page_url,
-                lambda href: base_url + href
+                # Construct correct PDF URL: base_url/{gm_number}/{filename}
+                lambda href: f"{base_url}/{gm_number}/{os.path.basename(href)}"
             )
         else:
             return jsonify(error="Invalid province or GM number format"), 400
