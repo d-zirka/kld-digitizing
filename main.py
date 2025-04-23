@@ -8,6 +8,11 @@ from bs4 import BeautifulSoup
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+@app.route("/")
+def index():
+    return "Canadian Assesment Reports Server is running."
+
+
 app = Flask(__name__)
 # Reuse HTTP session for connection pooling
 session = requests.Session()
