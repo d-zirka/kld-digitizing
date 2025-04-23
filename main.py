@@ -117,9 +117,10 @@ def download_gm() -> tuple:
     Download AR reports for Quebec or Ontario.
     """
     data = request.get_json(force=True)
-    ar_number = data.get("ar_number", "").strip()
-    province = data.get("province", "").strip()
-    project = data.get("project", "").strip()
+    ar_number = str(data.get("ar_number", "")).strip()
+    province  = str(data.get("province",  "")).strip()
+    project   = str(data.get("project",   "")).strip()
+
 
     if not all([ar_number, province, project]):
         return jsonify(error="Missing required parameters"), 400
