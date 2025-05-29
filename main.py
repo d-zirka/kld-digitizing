@@ -83,15 +83,15 @@ def download_ar_generic(
     ensure_folder(dbx, base_folder + "/Instructions")
     ensure_folder(dbx, base_folder + "/Source Data")
 
-    # --- новий блок: копіюємо шаблон інструкції та перейменовуємо його ---
+    # --- блок копіювання шаблону інструкцій ---
     TEMPLATE_INSTR_PATH = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
     dest_instr_path = f"{base_folder}/Instructions/{ar_number}_Instructions.xlsx"
     try:
         dbx.files_copy_v2(TEMPLATE_INSTR_PATH, dest_instr_path)
         app.logger.info(f"Copied instructions template to {dest_instr_path}")
     except dropbox.exceptions.ApiError as e:
-        app.logger.error(f"Failed to copy instructions template to {dest_instr_path}: {e}")
-    # --- кінець нового блоку ---
+        app.logger.error(f"Failed to copy instructions template: {e}")
+    # --- кінець блоку ---
 
     count = 0
     for href in pdf_links:
@@ -139,8 +139,12 @@ def download_gm() -> tuple:
             list_page = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
             downloaded = download_ar_generic(ar_number, province, project, list_page)
         elif province == "Ontario":
-            list_page = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{ar_number}.html"
-            blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7fzf")
+            list_page = f"https://www.geologyontario.mndm.gov.on.ca/" \
+                        f"mndmfiles/afri/data/records/{ar_number}.html"
+            blob_base = (
+                "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7."
+                "z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7"
+            )
             downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
         else:
             return jsonify(error="Invalid province or AR number format"), 400
