@@ -12,6 +12,11 @@ app = Flask(__name__)
 session = requests.Session()
 executor = ThreadPoolExecutor(max_workers=5)
 
+# === Здоров’я-схема ===
+@app.route("/")
+def index():
+    return "Canadian AR Server is running! 🚀"
+
 def get_dropbox_access_token() -> str:
     client_id     = os.getenv("DROPBOX_CLIENT_ID")
     client_secret = os.getenv("DROPBOX_CLIENT_SECRET")
@@ -20,9 +25,8 @@ def get_dropbox_access_token() -> str:
         raise RuntimeError("Missing Dropbox credentials")
     auth_str = f"{client_id}:{client_secret}"
     b64_auth = base64.b64encode(auth_str.encode()).decode()
-    token_url = "https://api.dropbox.com/oauth2/token"
     resp = session.post(
-        token_url,
+        "https://api.dropbox.com/oauth2/token",
         data={"grant_type": "refresh_token", "refresh_token": refresh_token},
         headers={"Authorization": f"Basic {b64_auth}"}
     )
@@ -42,50 +46,56 @@ def download_ar_generic(
     list_page_url: str,
     base_url: str = None
 ) -> int:
+    # 1) Парсимо сторінку, збираємо всі .pdf
     resp = session.get(list_page_url)
     resp.raise_for_status()
-
     soup = BeautifulSoup(resp.text, "html.parser")
-    pdf_links = [
-        a["href"] for a in soup.find_all("a", href=True)
-        if a["href"].lower().endswith(".pdf")
-    ]
+    pdf_links = [a["href"] for a in soup.find_all("a", href=True)
+                 if a["href"].lower().endswith(".pdf")]
     if not pdf_links:
         return 0
 
+    # 2) Ініціалізуємо Dropbox
     access_token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(access_token)
 
+    # 3) Створюємо структуру папок
     base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
     ensure_folder(dbx, base_folder)
     ensure_folder(dbx, f"{base_folder}/Instructions")
     ensure_folder(dbx, f"{base_folder}/Source Data")
 
-    # --- Копіювання та перейменування шаблону інструкцій ---
-    TEMPLATE_INSTR_PATH = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
-    dest_instr_path = f"{base_folder}/Instructions/{ar_number}_Instructions.xlsx"
+    # 4) Копіюємо шаблон інструкцій і перейменовуємо
+    TEMPLATE_INSTR_PATH = (
+        "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/"
+        "01_Instructions.xlsx"
+    )
+    dest_instr = f"{base_folder}/Instructions/{ar_number}_Instructions.xlsx"
     try:
-        dbx.files_copy_v2(TEMPLATE_INSTR_PATH, dest_instr_path)
-        app.logger.info(f"Copied instructions template to {dest_instr_path}")
+        dbx.files_copy_v2(TEMPLATE_INSTR_PATH, dest_instr)
+        app.logger.info(f"Copied instructions => {dest_instr}")
     except dropbox.exceptions.ApiError as e:
-        app.logger.error(f"Failed to copy instructions template: {e}")
-    # --- /Кінець блоку ---
+        app.logger.error(f"Failed to copy instructions: {e}")
 
+    # 5) Завантажуємо PDF-ки
     count = 0
     for href in pdf_links:
         filename = os.path.basename(href)
         name_root, ext = os.path.splitext(filename)
-        ext_chars = ext[1:]
-        variants = [
-            ''.join(p) for p in product(*[(c.lower(), c.upper()) for c in ext_chars])
-        ]
+        variants = [''.join(p) for p in product(*[
+            (c.lower(), c.upper()) for c in ext[1:]
+        ])]
+
         for variant in variants:
+            # абсолютний URL?
             if href.lower().startswith(("http://", "https://")):
                 pdf_url = href
+            # якщо передано base_url (Ontario)
             elif base_url:
                 pdf_url = f"{base_url}/{ar_number}/{name_root}.{variant}"
+            # інакше — відносний шлях від list_page_url
             else:
-                pdf_url = list_page_url.rstrip('/') + '/' + href.lstrip('/')
+                pdf_url = list_page_url.rstrip("/") + "/" + href.lstrip("/")
 
             try:
                 r = session.get(pdf_url)
@@ -97,7 +107,7 @@ def download_ar_generic(
             except requests.HTTPError:
                 continue
             except Exception as e:
-                app.logger.error(f"Failed to download or upload {pdf_url}: {e}")
+                app.logger.error(f"Error fetching/uploading {pdf_url}: {e}")
                 break
 
     return count
@@ -106,16 +116,16 @@ def download_ar_generic(
 def download_gm() -> tuple:
     data      = request.get_json(force=True)
     ar_number = str(data.get("ar_number", "")).strip()
-    province  = str(data.get("province", "")).strip()
-    project   = str(data.get("project", "")).strip()
+    province  = str(data.get("province",  "")).strip()
+    project   = str(data.get("project",   "")).strip()
 
     if not all([ar_number, province, project]):
         return jsonify(error="Missing required parameters"), 400
 
     try:
         if province == "Quebec" and ar_number.upper().startswith("GM"):
-            list_page = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
-            downloaded = download_ar_generic(ar_number, province, project, list_page)
+            url = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
+            downloaded = download_ar_generic(ar_number, province, project, url)
         elif province == "Ontario":
             list_page = (
                 f"https://www.geologyontario.mndm.gov.on.ca/"
@@ -131,10 +141,9 @@ def download_gm() -> tuple:
         else:
             return jsonify(error="Invalid province or AR number format"), 400
 
-        if downloaded > 0:
-            return jsonify(message=f"Downloaded {downloaded} PDFs"), 200
-        else:
-            return jsonify(message="No PDFs found"), 200
+        msg = (f"Downloaded {downloaded} PDFs"
+               if downloaded > 0 else "No PDFs found")
+        return jsonify(message=msg), 200
 
     except requests.HTTPError as http_err:
         app.logger.error(f"HTTP error: {http_err}")
