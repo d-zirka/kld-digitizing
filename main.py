@@ -24,7 +24,7 @@ def get_dropbox_access_token() -> str:
     """
     Obtain a short-lived Dropbox access token using refresh token.
     """
-    client_id     = os.getenv("DROPBOX_CLIENT_ID")
+    client_id = os.getenv("DROPBOX_CLIENT_ID")
     client_secret = os.getenv("DROPBOX_CLIENT_SECRET")
     refresh_token = os.getenv("DROPBOX_REFRESH_TOKEN")
 
@@ -62,7 +62,7 @@ def download_ar_generic(
 ) -> int:
     """
     Generic AR report downloader: scrape page, find PDF links, upload in parallel.
-    If base_url is provided, constructs URLs: base_url/ar_number/filename
+    If base_url is provided, constructs URLs: base_url/ar_number/filename.
     Else uses list_page_url + href.
     Returns number of PDFs downloaded.
     """
@@ -71,58 +71,50 @@ def download_ar_generic(
 
     soup = BeautifulSoup(resp.text, "html.parser")
     # collect hrefs ending with any case variant of .pdf
-    pdf_links = [
-        a["href"] for a in soup.find_all("a", href=True)
-        if a["href"].lower().endswith(".pdf")
-    ]
+    pdf_links = [a["href"] for a in soup.find_all("a", href=True)
+                 if a["href"].lower().endswith(".pdf")]
     if not pdf_links:
         return 0
 
     access_token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(access_token)
 
-    base_folder = (
-        f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/"
-        f"1 - NEW REPORTS/{province}/{project}/{ar_number}"
-    )
-    ensure_folder(dbx, base_folder)
-    ensure_folder(dbx, base_folder + "/Instructions")
-    ensure_folder(dbx, base_folder + "/Source Data")
+    base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
+    instructions_folder = base_folder + "/Instructions"
+    source_data_folder  = base_folder + "/Source Data"
 
-    # --- Копіювання шаблону інструкцій і перейменування ---
-    TEMPLATE_INSTR_PATH = (
-        "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/"
-        "_Documents/Instructions/01_Instructions.xlsx"
-    )
-    dest_instr_path = f"{base_folder}/Instructions/{ar_number}_Instructions.xlsx"
+    # Створюємо потрібні папки, якщо їх ще немає
+    ensure_folder(dbx, base_folder)
+    ensure_folder(dbx, instructions_folder)
+    ensure_folder(dbx, source_data_folder)
+
+    # --- Копіюємо шаблон інструкцій і перейменовуємо ---
     try:
-        dbx.files_copy_v2(TEMPLATE_INSTR_PATH, dest_instr_path)
-        app.logger.info(f"Copied instructions template to {dest_instr_path}")
+        src_path = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
+        dest_path = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
+        dbx.files_copy_v2(src_path, dest_path, autorename=False)
     except dropbox.exceptions.ApiError as e:
-        app.logger.error(f"Failed to copy instructions template: {e}")
-    # --- /кінець блоку ---
+        # Якщо файл уже існує або інша помилка — логіруємо й продовжуємо
+        app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій: {e}")
 
     count = 0
     for href in pdf_links:
         filename = os.path.basename(href)
         name_root, ext = os.path.splitext(filename)
+        # generate all case combinations for extension letters
         ext_chars = ext[1:]  # strip dot
-        variants = [
-            ''.join(p) for p in product(*[(c.lower(), c.upper()) for c in ext_chars])
-        ]
+        variants = [''.join(p) for p in product(*[(c.lower(), c.upper()) for c in ext_chars])]
 
+        # attempt each variant
         for variant in variants:
-            if href.lower().startswith(("http://", "https://")):
-                pdf_url = href
-            elif base_url:
+            if base_url:
                 pdf_url = f"{base_url}/{ar_number}/{name_root}.{variant}"
             else:
-                pdf_url = list_page_url.rstrip("/") + "/" + href.lstrip("/")
-
+                pdf_url = list_page_url + href
             try:
                 r = session.get(pdf_url)
                 r.raise_for_status()
-                dest = f"{base_folder}/Source Data/{os.path.basename(pdf_url)}"
+                dest = source_data_folder + "/" + os.path.basename(pdf_url)
                 dbx.files_upload(r.content, dest, mode=WriteMode.overwrite)
                 count += 1
                 break
@@ -131,16 +123,14 @@ def download_ar_generic(
             except Exception as e:
                 app.logger.error(f"Failed to download or upload {pdf_url}: {e}")
                 break
-
     return count
-
 
 @app.route("/download_gm", methods=["POST"])
 def download_gm() -> tuple:
     """
     Download AR reports for Quebec or Ontario.
     """
-    data      = request.get_json(force=True)
+    data = request.get_json(force=True)
     ar_number = str(data.get("ar_number", "")).strip()
     province  = str(data.get("province",  "")).strip()
     project   = str(data.get("project",   "")).strip()
@@ -153,17 +143,9 @@ def download_gm() -> tuple:
             list_page = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
             downloaded = download_ar_generic(ar_number, province, project, list_page)
         elif province == "Ontario":
-            list_page = (
-                f"https://www.geologyontario.mndm.gov.on.ca/"
-                f"mndmfiles/afri/data/records/{ar_number}.html"
-            )
-            blob_base = (
-                "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7."
-                "z01.azurefd.net/lrc-geology-documents/assessment"
-            )
-            downloaded = download_ar_generic(
-                ar_number, province, project, list_page, blob_base
-            )
+            list_page = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{ar_number}.html"
+            blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
+            downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
         else:
             return jsonify(error="Invalid province or AR number format"), 400
 
@@ -179,7 +161,6 @@ def download_gm() -> tuple:
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
-
 @app.errorhandler(Exception)
 def handle_all_errors(e):
     """
@@ -187,7 +168,6 @@ def handle_all_errors(e):
     """
     app.logger.error(f"Unhandled exception: {e}", exc_info=True)
     return jsonify(error="Internal server error"), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 81)))
