@@ -19,7 +19,6 @@ executor = ThreadPoolExecutor(max_workers=5)
 def index():
     return "Canadian AR Server is running! 🚀"
 
-
 def get_dropbox_access_token() -> str:
     """
     Obtain a short-lived Dropbox access token using refresh token.
@@ -42,7 +41,6 @@ def get_dropbox_access_token() -> str:
     resp.raise_for_status()
     return resp.json()["access_token"]
 
-
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
     """
     Create folder at path if it does not exist.
@@ -51,7 +49,6 @@ def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
         dbx.files_get_metadata(path)
     except dropbox.exceptions.ApiError:
         dbx.files_create_folder_v2(path)
-
 
 def download_ar_generic(
     ar_number: str,
@@ -76,12 +73,25 @@ def download_ar_generic(
     if not pdf_links:
         return 0
 
+    # init Dropbox client
     access_token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(access_token)
+
+    # папки для звіту
     base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
     ensure_folder(dbx, base_folder)
     ensure_folder(dbx, base_folder + "/Instructions")
     ensure_folder(dbx, base_folder + "/Source Data")
+
+    # --- новий блок: копіюємо шаблон інструкції та перейменовуємо його ---
+    TEMPLATE_INSTR_PATH = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
+    dest_instr_path = f"{base_folder}/Instructions/{ar_number}_Instructions.xlsx"
+    try:
+        dbx.files_copy_v2(TEMPLATE_INSTR_PATH, dest_instr_path)
+        app.logger.info(f"Copied instructions template to {dest_instr_path}")
+    except dropbox.exceptions.ApiError as e:
+        app.logger.error(f"Failed to copy instructions template to {dest_instr_path}: {e}")
+    # --- кінець нового блоку ---
 
     count = 0
     for href in pdf_links:
@@ -121,7 +131,6 @@ def download_gm() -> tuple:
     province  = str(data.get("province",  "")).strip()
     project   = str(data.get("project",   "")).strip()
 
-
     if not all([ar_number, province, project]):
         return jsonify(error="Missing required parameters"), 400
 
@@ -131,7 +140,7 @@ def download_gm() -> tuple:
             downloaded = download_ar_generic(ar_number, province, project, list_page)
         elif province == "Ontario":
             list_page = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{ar_number}.html"
-            blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
+            blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7.z01.azurefd7azhvfsf7fzf")
             downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
         else:
             return jsonify(error="Invalid province or AR number format"), 400
