@@ -83,18 +83,17 @@ def download_ar_generic(
     instructions_folder = base_folder + "/Instructions"
     source_data_folder  = base_folder + "/Source Data"
 
-    # Створюємо потрібні папки, якщо їх ще немає
+    # Створюємо потрібні папки
     ensure_folder(dbx, base_folder)
     ensure_folder(dbx, instructions_folder)
     ensure_folder(dbx, source_data_folder)
 
-    # --- Копіюємо шаблон інструкцій і перейменовуємо ---
+    # Копіюємо шаблон інструкцій і перейменовуємо
     try:
         src_path = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
         dest_path = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
         dbx.files_copy_v2(src_path, dest_path, autorename=False)
     except dropbox.exceptions.ApiError as e:
-        # Якщо файл уже існує або інша помилка — логіруємо й продовжуємо
         app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій: {e}")
 
     count = 0
@@ -125,10 +124,11 @@ def download_ar_generic(
                 break
     return count
 
+
 @app.route("/download_gm", methods=["POST"])
 def download_gm() -> tuple:
     """
-    Download AR reports for Quebec or Ontario.
+    Download AR reports for Quebec, Ontario або New Brunswick.
     """
     data = request.get_json(force=True)
     ar_number = str(data.get("ar_number", "")).strip()
@@ -139,20 +139,51 @@ def download_gm() -> tuple:
         return jsonify(error="Missing required parameters"), 400
 
     try:
+        # 1) Quebec (тільки GM-номер)
         if province == "Quebec" and ar_number.upper().startswith("GM"):
             list_page = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
             downloaded = download_ar_generic(ar_number, province, project, list_page)
+
+        # 2) Ontario
         elif province == "Ontario":
             list_page = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{ar_number}.html"
             blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
             downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
+
+        # 3) New Brunswick – створюємо папки й копіюємо шаблон, але без завантаження PDF
+        elif province == "New Brunswick":
+            access_token = get_dropbox_access_token()
+            dbx = dropbox.Dropbox(access_token)
+
+            base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
+            instructions_folder = base_folder + "/Instructions"
+            source_data_folder  = base_folder + "/Source Data"
+
+            # Створюємо ті самі папки, що й для інших провінцій
+            ensure_folder(dbx, base_folder)
+            ensure_folder(dbx, instructions_folder)
+            ensure_folder(dbx, source_data_folder)
+
+            # Копіюємо шаблон інструкцій
+            try:
+                src_path = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
+                dest_path = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
+                dbx.files_copy_v2(src_path, dest_path, autorename=False)
+            except dropbox.exceptions.ApiError as e:
+                app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій (NB): {e}")
+
+            downloaded = 0
+
+        # 4) Інші випадки – помилка
         else:
             return jsonify(error="Invalid province or AR number format"), 400
 
+        # Повертаємо результат
         if downloaded > 0:
             return jsonify(message=f"Downloaded {downloaded} PDFs"), 200
         else:
-            return jsonify(message="No PDFs found"), 200
+            # Для NB чи випадків, коли PDF не знайдено
+            return jsonify(message="Folders created. No PDFs downloaded."), 200
 
     except requests.HTTPError as http_err:
         app.logger.error(f"HTTP error: {http_err}")
@@ -161,6 +192,7 @@ def download_gm() -> tuple:
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
+
 @app.errorhandler(Exception)
 def handle_all_errors(e):
     """
@@ -168,6 +200,7 @@ def handle_all_errors(e):
     """
     app.logger.error(f"Unhandled exception: {e}", exc_info=True)
     return jsonify(error="Internal server error"), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 81)))
