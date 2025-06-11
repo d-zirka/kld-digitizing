@@ -18,16 +18,39 @@ executor = ThreadPoolExecutor(max_workers=5)
 @app.route("/")
 def index():
     return """
-<pre>
-Canadian AR Server is running! 🚀
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Canadian AR Server</title>
+  <style>
+    body { 
+      font-family: sans-serif; 
+      padding: 2rem;
+      line-height: 1.4;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 0.5em;
+    }
+    pre {
+      font-size: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Canadian AR Server is running! 🚀</h1>
+  <pre>
 Functionality:
 • Download AR PDFs for Quebec (GM#) and Ontario
 • Create report folders and files for Quebec, Ontario, New Brunswick:
     – Copy and rename Instructions.xlsx
     – Copy and rename Geochemistry.gdb
-</pre>
+  </pre>
+</body>
+</html>
 """
+
 
 def get_dropbox_access_token() -> str:
     """
