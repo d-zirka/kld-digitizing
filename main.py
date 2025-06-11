@@ -62,8 +62,7 @@ def download_ar_generic(
 ) -> int:
     """
     Generic AR report downloader: scrape page, find PDF links, upload in parallel.
-    If base_url is provided, constructs URLs: base_url/ar_number/filename.
-    Else uses list_page_url + href.
+    Also copies Instructions.xlsx and Geochemistry.gdb from templates.
     Returns number of PDFs downloaded.
     """
     resp = session.get(list_page_url)
@@ -83,19 +82,28 @@ def download_ar_generic(
     instructions_folder = base_folder + "/Instructions"
     source_data_folder  = base_folder + "/Source Data"
 
-    # Створюємо потрібні папки
+    # Create necessary folders
     ensure_folder(dbx, base_folder)
     ensure_folder(dbx, instructions_folder)
     ensure_folder(dbx, source_data_folder)
 
-    # Копіюємо шаблон інструкцій і перейменовуємо
+    # Copy and rename Instructions.xlsx
     try:
-        src_path = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
-        dest_path = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
-        dbx.files_copy_v2(src_path, dest_path, autorename=False)
+        src_instructions = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
+        dest_instructions = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
+        dbx.files_copy_v2(src_instructions, dest_instructions, autorename=False)
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій: {e}")
 
+    # Copy and rename Geochemistry.gdb
+    try:
+        src_gdb = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb"
+        dest_gdb = f"{base_folder}/{ar_number}_Geochemistry.gdb"
+        dbx.files_copy_v2(src_gdb, dest_gdb, autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"Не вдалося скопіювати геобазу: {e}")
+
+    # Download PDFs
     count = 0
     for href in pdf_links:
         filename = os.path.basename(href)
@@ -150,7 +158,7 @@ def download_gm() -> tuple:
             blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
             downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
 
-        # 3) New Brunswick – створюємо папки й копіюємо шаблон, але без завантаження PDF
+        # 3) New Brunswick – створюємо папки й копіюємо шаблони, але без завантаження PDF
         elif province == "New Brunswick":
             access_token = get_dropbox_access_token()
             dbx = dropbox.Dropbox(access_token)
@@ -159,18 +167,26 @@ def download_gm() -> tuple:
             instructions_folder = base_folder + "/Instructions"
             source_data_folder  = base_folder + "/Source Data"
 
-            # Створюємо ті самі папки, що й для інших провінцій
+            # Створюємо ті самі папки
             ensure_folder(dbx, base_folder)
             ensure_folder(dbx, instructions_folder)
             ensure_folder(dbx, source_data_folder)
 
-            # Копіюємо шаблон інструкцій
+            # Copy and rename Instructions.xlsx
             try:
-                src_path = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
-                dest_path = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
-                dbx.files_copy_v2(src_path, dest_path, autorename=False)
+                src_instructions = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
+                dest_instructions = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
+                dbx.files_copy_v2(src_instructions, dest_instructions, autorename=False)
             except dropbox.exceptions.ApiError as e:
                 app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій (NB): {e}")
+
+            # Copy and rename Geochemistry.gdb
+            try:
+                src_gdb = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb"
+                dest_gdb = f"{base_folder}/{ar_number}_Geochemistry.gdb"
+                dbx.files_copy_v2(src_gdb, dest_gdb, autorename=False)
+            except dropbox.exceptions.ApiError as e:
+                app.logger.warning(f"Не вдалося скопіювати геобазу (NB): {e}")
 
             downloaded = 0
 
