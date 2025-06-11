@@ -17,8 +17,14 @@ executor = ThreadPoolExecutor(max_workers=5)
 
 @app.route("/")
 def index():
-    return "Canadian AR Server is running! 🚀"
-
+    return (
+        "Canadian AR Server is running! 🚀\n\n"
+        "Functionality:\n"
+        "• Download AR PDFs for Quebec (GM#) and Ontario\n"
+        "• Create report folders and files for Quebec, Ontario, New Brunswick:\n"
+        "    – Copy and rename Instructions.xlsx\n"
+        "    – Copy and rename Geochemistry.gdb\n"
+    )
 
 def get_dropbox_access_token() -> str:
     """
