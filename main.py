@@ -3,13 +3,14 @@ import base64
 import requests
 import dropbox
 from dropbox.files import WriteMode
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, url_for
 from bs4 import BeautifulSoup
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import product
 
 app = Flask(__name__)
+
 # Reuse HTTP session for connection pooling
 session = requests.Session()
 # ThreadPool for parallel PDF downloads
@@ -17,25 +18,27 @@ executor = ThreadPoolExecutor(max_workers=5)
 
 @app.route("/")
 def index():
-    return """
+    icon_link = url_for('static', filename='favicon.png')
+    return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Canadian AR Server</title>
+  <link rel="icon" href="{icon_link}" type="image/png">
   <style>
-    body { 
+    body {{ 
       font-family: sans-serif; 
       padding: 2rem;
       line-height: 1.4;
-    }
-    h1 {
+    }}
+    h1 {{
       font-size: 2.5em;
       margin-bottom: 0.5em;
-    }
-    pre {
+    }}
+    pre {{
       font-size: 1.2em;
-    }
+    }}
   </style>
 </head>
 <body>
@@ -50,7 +53,6 @@ Functionality:
 </body>
 </html>
 """
-
 
 def get_dropbox_access_token() -> str:
     """
@@ -74,7 +76,6 @@ def get_dropbox_access_token() -> str:
     resp.raise_for_status()
     return resp.json()["access_token"]
 
-
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
     """
     Create folder at path if it does not exist.
@@ -83,7 +84,6 @@ def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
         dbx.files_get_metadata(path)
     except dropbox.exceptions.ApiError:
         dbx.files_create_folder_v2(path)
-
 
 def download_ar_generic(
     ar_number: str,
@@ -164,7 +164,6 @@ def download_ar_generic(
                 break
     return count
 
-
 @app.route("/download_gm", methods=["POST"])
 def download_gm() -> tuple:
     """
@@ -240,7 +239,6 @@ def download_gm() -> tuple:
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
-
 @app.errorhandler(Exception)
 def handle_all_errors(e):
     """
@@ -248,7 +246,6 @@ def handle_all_errors(e):
     """
     app.logger.error(f"Unhandled exception: {e}", exc_info=True)
     return jsonify(error="Internal server error"), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 81)))
