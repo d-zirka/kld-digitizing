@@ -5,40 +5,27 @@ import dropbox
 from dropbox.files import WriteMode
 from flask import Flask, request, jsonify, url_for
 from bs4 import BeautifulSoup
-import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from itertools import product
 
 app = Flask(__name__)
-
-# Reuse HTTP session for connection pooling
 session = requests.Session()
-# ThreadPool for parallel PDF downloads
 executor = ThreadPoolExecutor(max_workers=5)
 
 @app.route("/")
 def index():
-    icon_link = url_for('static', filename='favicon.png')
+    icon = url_for('static', filename='favicon.png')
     return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Canadian AR Server</title>
-  <link rel="icon" href="{icon_link}" type="image/png">
+  <link rel="icon" href="{icon}" type="image/png">
   <style>
-    body {{ 
-      font-family: sans-serif; 
-      padding: 2rem;
-      line-height: 1.4;
-    }}
-    h1 {{
-      font-size: 2.5em;
-      margin-bottom: 0.5em;
-    }}
-    pre {{
-      font-size: 1.2em;
-    }}
+    body {{ font-family: sans-serif; padding: 2rem; line-height: 1.4; }}
+    h1 {{ font-size: 2.5em; margin-bottom: .5em; }}
+    pre {{ font-size: 1.2em; }}
   </style>
 </head>
 <body>
@@ -47,39 +34,31 @@ def index():
 Functionality:
 • Download AR PDFs for Quebec (GM#) and Ontario
 • Create report folders and files for Quebec, Ontario, New Brunswick:
-    – Copy and rename Instructions.xlsx
-    – Copy and rename Geochemistry.gdb
+    – Copy & rename Instructions.xlsx
+    – Copy & rename Geochemistry.gdb
+    – Copy & rename DDH.gdb
+    – Create Plan Maps & Sections
   </pre>
 </body>
 </html>
 """
 
 def get_dropbox_access_token() -> str:
-    """
-    Obtain a short-lived Dropbox access token using refresh token.
-    """
-    client_id = os.getenv("DROPBOX_CLIENT_ID")
-    client_secret = os.getenv("DROPBOX_CLIENT_SECRET")
-    refresh_token = os.getenv("DROPBOX_REFRESH_TOKEN")
-
-    if not all([client_id, client_secret, refresh_token]):
+    cid = os.getenv("DROPBOX_CLIENT_ID")
+    csec = os.getenv("DROPBOX_CLIENT_SECRET")
+    rtok = os.getenv("DROPBOX_REFRESH_TOKEN")
+    if not all([cid, csec, rtok]):
         raise RuntimeError("Missing Dropbox credentials")
-
-    auth_str = f"{client_id}:{client_secret}"
-    b64_auth = base64.b64encode(auth_str.encode()).decode()
-    token_url = "https://api.dropbox.com/oauth2/token"
+    auth = base64.b64encode(f"{cid}:{csec}".encode()).decode()
     resp = session.post(
-        token_url,
-        data={"grant_type": "refresh_token", "refresh_token": refresh_token},
-        headers={"Authorization": f"Basic {b64_auth}"}
+        "https://api.dropbox.com/oauth2/token",
+        data={"grant_type":"refresh_token","refresh_token":rtok},
+        headers={"Authorization":f"Basic {auth}"}
     )
     resp.raise_for_status()
     return resp.json()["access_token"]
 
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
-    """
-    Create folder at path if it does not exist.
-    """
     try:
         dbx.files_get_metadata(path)
     except dropbox.exceptions.ApiError:
@@ -89,163 +68,132 @@ def download_ar_generic(
     ar_number: str,
     province: str,
     project: str,
-    list_page_url: str,
+    list_page_url: str = None,
     base_url: str = None
 ) -> int:
     """
-    Generic AR report downloader: scrape page, find PDF links, upload in parallel.
-    Also copies Instructions.xlsx and Geochemistry.gdb from templates.
-    Returns number of PDFs downloaded.
+    1) Створює структуру папок і копіює шаблони:
+       - Instructions.xlsx
+       - Geochemistry.gdb
+       - DDH.gdb
+       - Plan Maps/, Sections/
+    2) Якщо list_page_url задано — скрапить PDF і завантажує їх.
+    Повертає кількість завантажених PDF.
     """
-    resp = session.get(list_page_url)
-    resp.raise_for_status()
+    # --- Dropbox setup ---
+    token = get_dropbox_access_token()
+    dbx = dropbox.Dropbox(token)
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    # collect hrefs ending with any case variant of .pdf
-    pdf_links = [a["href"] for a in soup.find_all("a", href=True)
-                 if a["href"].lower().endswith(".pdf")]
-    if not pdf_links:
+    base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
+    instr = f"{base}/Instructions"
+    srcdata = f"{base}/Source Data"
+
+    # Створюємо потрібні папки
+    for p in (base, instr, srcdata, f"{base}/Plan Maps", f"{base}/Sections"):
+        ensure_folder(dbx, p)
+
+    # Копіюємо шаблони
+    try:
+        dbx.files_copy_v2(
+            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
+            f"{instr}/{ar_number}_Instructions.xlsx",
+            autorename=False
+        )
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"Instructions copy failed: {e}")
+
+    try:
+        dbx.files_copy_v2(
+            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
+            f"{base}/{ar_number}_Geochemistry.gdb",
+            autorename=False
+        )
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"Geochemistry copy failed: {e}")
+
+    try:
+        dbx.files_copy_v2(
+            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
+            f"{base}/{ar_number}_DDH.gdb",
+            autorename=False
+        )
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"DDH copy failed: {e}")
+
+    # Якщо не задано сторінку — припиняємо тут
+    if not list_page_url:
         return 0
 
-    access_token = get_dropbox_access_token()
-    dbx = dropbox.Dropbox(access_token)
+    # Інакше — скрапимо PDF
+    resp = session.get(list_page_url)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    pdfs = [a["href"] for a in soup.find_all("a", href=True)
+            if a["href"].lower().endswith(".pdf")]
 
-    base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
-    instructions_folder = base_folder + "/Instructions"
-    source_data_folder  = base_folder + "/Source Data"
-
-    # Create necessary folders
-    ensure_folder(dbx, base_folder)
-    ensure_folder(dbx, instructions_folder)
-    ensure_folder(dbx, source_data_folder)
-
-    # Copy and rename Instructions.xlsx
-    try:
-        src_instructions = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
-        dest_instructions = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
-        dbx.files_copy_v2(src_instructions, dest_instructions, autorename=False)
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій: {e}")
-
-    # Copy and rename Geochemistry.gdb
-    try:
-        src_gdb = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb"
-        dest_gdb = f"{base_folder}/{ar_number}_Geochemistry.gdb"
-        dbx.files_copy_v2(src_gdb, dest_gdb, autorename=False)
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"Не вдалося скопіювати геобазу: {e}")
-
-    # Download PDFs
     count = 0
-    for href in pdf_links:
-        filename = os.path.basename(href)
-        name_root, ext = os.path.splitext(filename)
-        # generate all case combinations for extension letters
-        ext_chars = ext[1:]  # strip dot
-        variants = [''.join(p) for p in product(*[(c.lower(), c.upper()) for c in ext_chars])]
-
-        # attempt each variant
-        for variant in variants:
-            if base_url:
-                pdf_url = f"{base_url}/{ar_number}/{name_root}.{variant}"
-            else:
-                pdf_url = list_page_url + href
+    for href in pdfs:
+        name = os.path.basename(href)
+        root, ext = os.path.splitext(name)
+        variants = [''.join(p) for p in product(*[(c.lower(),c.upper()) for c in ext[1:]])]
+        for v in variants:
+            url = f"{base_url}/{ar_number}/{root}.{v}" if base_url else list_page_url + href
             try:
-                r = session.get(pdf_url)
+                r = session.get(url)
                 r.raise_for_status()
-                dest = source_data_folder + "/" + os.path.basename(pdf_url)
-                dbx.files_upload(r.content, dest, mode=WriteMode.overwrite)
+                dbx.files_upload(
+                    r.content,
+                    f"{srcdata}/{os.path.basename(url)}",
+                    mode=WriteMode.overwrite
+                )
                 count += 1
                 break
             except requests.HTTPError:
                 continue
             except Exception as e:
-                app.logger.error(f"Failed to download or upload {pdf_url}: {e}")
+                app.logger.error(f"PDF upload error [{url}]: {e}")
                 break
+
     return count
 
 @app.route("/download_gm", methods=["POST"])
-def download_gm() -> tuple:
-    """
-    Download AR reports for Quebec, Ontario або New Brunswick.
-    """
-    data = request.get_json(force=True)
-    ar_number = str(data.get("ar_number", "")).strip()
-    province  = str(data.get("province",  "")).strip()
-    project   = str(data.get("project",   "")).strip()
-
-    if not all([ar_number, province, project]):
-        return jsonify(error="Missing required parameters"), 400
+def download_gm():
+    data      = request.get_json(force=True)
+    num       = str(data.get("ar_number","")).strip()
+    prov      = str(data.get("province","")).strip()
+    proj      = str(data.get("project","")).strip()
+    if not all([num, prov, proj]):
+        return jsonify(error="Missing parameters"), 400
 
     try:
-        # 1) Quebec (тільки GM-номер)
-        if province == "Quebec" and ar_number.upper().startswith("GM"):
-            list_page = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{ar_number}/"
-            downloaded = download_ar_generic(ar_number, province, project, list_page)
-
-        # 2) Ontario
-        elif province == "Ontario":
-            list_page = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{ar_number}.html"
-            blob_base = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
-            downloaded = download_ar_generic(ar_number, province, project, list_page, blob_base)
-
-        # 3) New Brunswick – створюємо папки й копіюємо шаблони, але без завантаження PDF
-        elif province == "New Brunswick":
-            access_token = get_dropbox_access_token()
-            dbx = dropbox.Dropbox(access_token)
-
-            base_folder = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
-            instructions_folder = base_folder + "/Instructions"
-            source_data_folder  = base_folder + "/Source Data"
-
-            # Створюємо ті самі папки
-            ensure_folder(dbx, base_folder)
-            ensure_folder(dbx, instructions_folder)
-            ensure_folder(dbx, source_data_folder)
-
-            # Copy and rename Instructions.xlsx
-            try:
-                src_instructions = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx"
-                dest_instructions = f"{instructions_folder}/{ar_number}_Instructions.xlsx"
-                dbx.files_copy_v2(src_instructions, dest_instructions, autorename=False)
-            except dropbox.exceptions.ApiError as e:
-                app.logger.warning(f"Не вдалося скопіювати шаблон інструкцій (NB): {e}")
-
-            # Copy and rename Geochemistry.gdb
-            try:
-                src_gdb = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb"
-                dest_gdb = f"{base_folder}/{ar_number}_Geochemistry.gdb"
-                dbx.files_copy_v2(src_gdb, dest_gdb, autorename=False)
-            except dropbox.exceptions.ApiError as e:
-                app.logger.warning(f"Не вдалося скопіювати геобазу (NB): {e}")
-
-            downloaded = 0
-
-        # 4) Інші випадки – помилка
+        if prov == "Quebec" and num.upper().startswith("GM"):
+            url = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{num}/"
+            cnt = download_ar_generic(num, prov, proj, url)
+        elif prov == "Ontario":
+            url = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{num}.html"
+            blob = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
+            cnt = download_ar_generic(num, prov, proj, url, blob)
+        elif prov == "New Brunswick":
+            # NB: лише копіюємо шаблони + створюємо папки
+            cnt = download_ar_generic(num, prov, proj)
         else:
-            return jsonify(error="Invalid province or AR number format"), 400
+            return jsonify(error="Invalid province or AR#"), 400
 
-        # Повертаємо результат
-        if downloaded > 0:
-            return jsonify(message=f"Downloaded {downloaded} PDFs"), 200
-        else:
-            # Для NB чи випадків, коли PDF не знайдено
-            return jsonify(message="Folders created. No PDFs downloaded."), 200
+        msg = f"Downloaded {cnt} PDFs" if cnt>0 else "Folders created. No PDFs downloaded."
+        return jsonify(message=msg), 200
 
-    except requests.HTTPError as http_err:
-        app.logger.error(f"HTTP error: {http_err}")
-        return jsonify(error=str(http_err)), 502
+    except requests.HTTPError as he:
+        app.logger.error(f"HTTP error: {he}")
+        return jsonify(error=str(he)), 502
     except Exception as e:
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
 @app.errorhandler(Exception)
-def handle_all_errors(e):
-    """
-    Global error handler.
-    """
-    app.logger.error(f"Unhandled exception: {e}", exc_info=True)
+def all_errors(e):
+    app.logger.error(f"Unhandled: {e}", exc_info=True)
     return jsonify(error="Internal server error"), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 81)))
+    port = int(os.getenv("PORT", 81))
+    app.run(host="0.0.0.0", port=port)
