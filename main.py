@@ -37,7 +37,7 @@ Functionality:
     – Copy & rename Instructions.xlsx
     – Copy & rename Geochemistry.gdb
     – Copy & rename DDH.gdb
-    – Create Plan Maps & Sections
+    – Create Plan Maps & Sections folders
   </pre>
 </body>
 </html>
