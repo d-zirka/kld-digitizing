@@ -37,11 +37,11 @@ Functionality:
     – Copy & rename Instructions.xlsx
     – Copy & rename Geochemistry.gdb
     – Copy & rename DDH.gdb
-    – Create Plan Maps & Sections folders
   </pre>
 </body>
 </html>
 """
+
 
 def get_dropbox_access_token() -> str:
     cid = os.getenv("DROPBOX_CLIENT_ID")
@@ -58,11 +58,13 @@ def get_dropbox_access_token() -> str:
     resp.raise_for_status()
     return resp.json()["access_token"]
 
+
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
     try:
         dbx.files_get_metadata(path)
     except dropbox.exceptions.ApiError:
         dbx.files_create_folder_v2(path)
+
 
 def download_ar_generic(
     ar_number: str,
@@ -76,11 +78,9 @@ def download_ar_generic(
        - Instructions.xlsx
        - Geochemistry.gdb
        - DDH.gdb
-       - Plan Maps/, Sections/
     2) Якщо list_page_url задано — скрапить PDF і завантажує їх.
     Повертає кількість завантажених PDF.
     """
-    # --- Dropbox setup ---
     token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(token)
 
@@ -89,7 +89,7 @@ def download_ar_generic(
     srcdata = f"{base}/Source Data"
 
     # Створюємо потрібні папки
-    for p in (base, instr, srcdata, f"{base}/Plan Maps", f"{base}/Sections"):
+    for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
 
     # Копіюємо шаблони
@@ -174,7 +174,6 @@ def download_gm():
             blob = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
             cnt = download_ar_generic(num, prov, proj, url, blob)
         elif prov == "New Brunswick":
-            # NB: лише копіюємо шаблони + створюємо папки
             cnt = download_ar_generic(num, prov, proj)
         else:
             return jsonify(error="Invalid province or AR#"), 400
