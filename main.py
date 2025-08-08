@@ -12,7 +12,7 @@ from urllib3.util.retry import Retry
 import dropbox
 from dropbox.files import WriteMode
 
-from flask import Flask, request, jsonify, url_for, redirect, send_from_directory
+from flask import Flask, request, jsonify, url_for, send_from_directory
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
 
@@ -21,7 +21,6 @@ from werkzeug.exceptions import HTTPException
 # -----------------------------------------------------------------------------
 app = Flask(__name__)
 
-# Більш інформативні логи
 logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
@@ -46,7 +45,7 @@ def _requests_session() -> requests.Session:
 session = _requests_session()
 
 # -----------------------------------------------------------------------------
-# Маршрути службові
+# Службові маршрути
 # -----------------------------------------------------------------------------
 @app.route("/healthz")
 def healthz():
@@ -54,12 +53,10 @@ def healthz():
 
 @app.route("/favicon.ico")
 def favicon():
-    # Якщо є статичний файл — віддамо його
     static_path = os.path.join(app.root_path, "static")
     fav = os.path.join(static_path, "favicon.png")
     if os.path.exists(fav):
         return send_from_directory(static_path, "favicon.png", mimetype="image/png")
-    # Інакше — не шумимо 404 у логах
     return "", 204
 
 # -----------------------------------------------------------------------------
@@ -90,7 +87,7 @@ def index():
     html,body {{ height: 100%; }}
     body {{
       margin:0; background: var(--bg); color: var(--fg);
-      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
       display:flex; align-items:center; justify-content:center; padding:24px;
     }}
     .wrap {{ width: 100%; max-width: 980px; }}
@@ -99,29 +96,29 @@ def index():
       padding: 28px; overflow:hidden;
     }}
     header {{ display:flex; gap:16px; align-items:center; margin-bottom: 14px; }}
-    .logo {{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#2563eb, #10b981); display:grid; place-items:center; color:white; font-weight:700; }}
-    h1 {{ font-size: clamp(22px, 3.2vw, 30px); margin:0; letter-spacing:.2px; }}
-    .tag {{ color:var(--ok); font-weight:600; font-size:13px; margin-left:auto; white-space:nowrap; }}
+    .logo {{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#2563eb, #10b981);
+             display:grid; place-items:center; color:white; font-weight:700; }}
+    h1 {{ font-size: clamp(22px, 3.2vw, 30px); margin:0; }}
+    .tag {{ color:var(--ok); font-weight:600; font-size:13px; margin-left:auto; }}
     .grid {{ display:grid; grid-template-columns: 1fr; gap: 18px; margin-top: 10px; }}
     @media(min-width:900px) {{ .grid {{ grid-template-columns: 1.1fr .9fr; }} }}
-    section {{ background: transparent; border:1px dashed var(--border); border-radius: 12px; padding:16px 18px; }}
+    section {{ border:1px dashed var(--border); border-radius: 12px; padding:16px 18px; }}
     h2 {{ margin:0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing:.12em; color:var(--muted); }}
     ul {{ margin:10px 0 0 18px; padding:0; }}
     li {{ margin: 6px 0; }}
-    code, pre {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }}
+    code, pre {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas; }}
     pre {{
       margin: 10px 0 0; padding: 14px; border-radius: 10px; border:1px solid var(--border);
       background: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.02));
       color: var(--code); overflow:auto; font-size: 13px;
     }}
-    .row {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }}
+    .row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }}
     .pill {{ border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted); }}
-    .btn {{
-      appearance:none; border:1px solid var(--border); background:transparent; color:var(--fg);
-      padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600;
-    }}
+    .btn {{ border:1px solid var(--border); background:transparent; color:var(--fg);
+           padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }}
     .btn:hover {{ border-color: var(--accent); }}
-    footer {{ margin-top: 16px; color: var(--muted); font-size: 12px; display:flex; justify-content:space-between; align-items:center; }}
+    footer {{ margin-top: 16px; color: var(--muted); font-size: 12px;
+              display:flex; justify-content:space-between; align-items:center; }}
     a {{ color: var(--accent); text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
   </style>
@@ -131,7 +128,7 @@ def index():
     <div class="card">
       <header>
         <div class="logo">AR</div>
-        <h1>Canadian AR Server is running <span aria-hidden="true">🚀</span></h1>
+        <h1>Canadian AR Server is running 🚀</h1>
         <div class="tag">healthy</div>
       </header>
 
@@ -148,14 +145,12 @@ def index():
               </ul>
             </li>
           </ul>
-
           <div class="row">
             <span class="pill">Dropbox integrated</span>
             <span class="pill">Timeouts &amp; retries</span>
             <span class="pill">/healthz</span>
           </div>
         </section>
-
         <section>
           <h2>API</h2>
           <div>POST <code>/download_gm</code></div>
@@ -166,32 +161,30 @@ def index():
 }}</pre>
           <div class="row">
             <button class="btn" onclick="copyJSON()">Copy JSON</button>
-            <a class="btn" href="/healthz" target="_blank" rel="noopener">Check health</a>
+            <a class="btn" href="/healthz" target="_blank">Check health</a>
           </div>
         </section>
       </div>
 
-<footer>
-  <div>
-    <span>Created by <b>Zirka</b> · chatGPT</span><br>
-    <span class="muted">Favicon: <code>/static/favicon.png</code> (optional)</span>
-  </div>
-  <div>Powered by Flask · Render</div>
-</footer>
-
+      <footer>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <div>Created by <b>Zirka</b> · chatGPT</div>
+          <div>Powered by Flask · Render</div>
+        </div>
+        <div class="muted">Favicon: <code>/static/favicon.png</code> (optional)</div>
+      </footer>
     </div>
   </div>
   <script>
-    function copyJSON(){{
+    function copyJSON(){
       const txt = document.getElementById('payload').innerText;
-      navigator.clipboard.writeText(txt).then(() => {{
+      navigator.clipboard.writeText(txt).then(() => {
         alert('JSON payload copied');
-      }});
-    }}
+      });
+    }
   </script>
 </body>
 </html>"""
-
 
 # -----------------------------------------------------------------------------
 # Dropbox helpers
@@ -219,25 +212,20 @@ def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
         dbx.files_create_folder_v2(path)
 
 # -----------------------------------------------------------------------------
-# Scrape & download helpers
+# PDF helpers
 # -----------------------------------------------------------------------------
 def _extract_pdf_links(html: str, base: str) -> List[str]:
-    """Шукає PDF-посилання, коректно обробляє відносні/абсолютні шляхи."""
     soup = BeautifulSoup(html, "html.parser")
     links = []
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
-        # якщо абсолютний URL і це pdf — беремо як є
         if href.lower().endswith(".pdf") and urlparse(href).scheme in ("http", "https"):
             links.append(href)
-            continue
-        # якщо відносний шлях і закінчується на .pdf — нормалізуємо
-        if href.lower().endswith(".pdf"):
+        elif href.lower().endswith(".pdf"):
             links.append(urljoin(base, href))
-    return list(dict.fromkeys(links))  # унікальні, зберігаючи порядок
+    return list(dict.fromkeys(links))
 
 def _case_variants(ext: str) -> List[str]:
-    """Генерує всі комбінації регістру для розширення без крапки, напр. 'pdf' -> ['pdf','pdF',...]."""
     if not ext:
         return []
     return [''.join(p) for p in product(*[(c.lower(), c.upper()) for c in ext])]
@@ -250,105 +238,57 @@ def _try_get(url: str) -> Optional[bytes]:
     except requests.HTTPError:
         return None
 
-def download_ar_generic(
-    ar_number: str,
-    province: str,
-    project: str,
-    list_page_url: str | None = None,
-    base_url: str | None = None
-) -> int:
-    """
-    1) Створює структуру папок і копіює шаблони:
-       - Instructions.xlsx
-       - Geochemistry.gdb
-       - DDH.gdb
-    2) Якщо list_page_url задано — скрапить PDF і завантажує їх у Dropbox.
-    Повертає кількість завантажених PDF.
-    """
+def download_ar_generic(ar_number: str, province: str, project: str,
+                        list_page_url: str | None = None,
+                        base_url: str | None = None) -> int:
     token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(token)
-
     base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
     instr = f"{base}/Instructions"
     srcdata = f"{base}/Source Data"
-
-    # Папки
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
-
-    # Копіювання шаблонів (якщо вже існують — просто лог, помилку не піднімаємо)
     try:
-        dbx.files_copy_v2(
-            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
-            f"{instr}/{ar_number}_Instructions.xlsx",
-            autorename=False
-        )
+        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
+                          f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Instructions copy failed: {e}")
-
     try:
-        dbx.files_copy_v2(
-            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
-            f"{base}/{ar_number}_Geochemistry.gdb",
-            autorename=False
-        )
+        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
+                          f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Geochemistry copy failed: {e}")
-
     try:
-        dbx.files_copy_v2(
-            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
-            f"{base}/{ar_number}_DDH.gdb",
-            autorename=False
-        )
+        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
+                          f"{base}/{ar_number}_DDH.gdb", autorename=False)
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"DDH copy failed: {e}")
-
-    # Якщо не задано сторінку — тільки структура/шаблони
     if not list_page_url:
         return 0
-
-    # Скрап сторінки зі списком
     resp = session.get(list_page_url, timeout=DEFAULT_TIMEOUT)
     resp.raise_for_status()
-
-    # 1) Спершу беремо всі явні .pdf-посилання на сторінці
     pdf_links = _extract_pdf_links(resp.text, list_page_url)
-
-    # 2) Якщо Ontario-варіант (base_url заданий) — спробуємо також конструювати посилання
-    #    за патерном <base_url>/<ar_number>/<root>.<extVariants>
     more_links: List[str] = []
     if base_url:
         soup = BeautifulSoup(resp.text, "html.parser")
         hrefs = [a["href"].strip() for a in soup.find_all("a", href=True)]
-        # беремо тільки ті href, що вказують на pdf (навіть якщо регістр ext інший)
         candidates = []
         for h in hrefs:
             name = os.path.basename(h)
             root, ext = os.path.splitext(name)
-            if ext:
-                ext_clean = ext[1:]
-                if ext_clean.lower() == "pdf":
-                    candidates.append(root)
-
-        # Якщо на сторінці не було явних .pdf, але були посилання з іменами — використаємо їх
+            if ext and ext[1:].lower() == "pdf":
+                candidates.append(root)
         if not candidates:
-            # fallback: побудуємо з будь-яких посилань, де є ім'я файлу
             for h in hrefs:
                 name = os.path.basename(h)
-                root, ext = os.path.splitext(name)
+                root, _ = os.path.splitext(name)
                 if root:
                     candidates.append(root)
-
         candidates = list(dict.fromkeys(candidates))
         for root in candidates:
             for v in _case_variants("pdf"):
                 more_links.append(f"{base_url}/{ar_number}/{root}.{v}")
-
-    # Об'єднуємо та унікалізуємо
     all_links = list(dict.fromkeys(pdf_links + more_links))
-
-    # Завантаження в Dropbox
     count = 0
     for url in all_links:
         try:
@@ -356,16 +296,14 @@ def download_ar_generic(
             if not content:
                 continue
             filename = os.path.basename(urlparse(url).path) or "file.pdf"
-            dst = f"{srcdata}/{filename}"
-            dbx.files_upload(content, dst, mode=WriteMode.overwrite)
+            dbx.files_upload(content, f"{srcdata}/{filename}", mode=WriteMode.overwrite)
             count += 1
         except Exception as e:
             app.logger.error(f"PDF upload error [{url}]: {e}")
-
     return count
 
 # -----------------------------------------------------------------------------
-# API: завантаження звітів
+# API route
 # -----------------------------------------------------------------------------
 @app.route("/download_gm", methods=["POST"])
 def download_gm():
@@ -373,10 +311,8 @@ def download_gm():
     num  = str(data.get("ar_number", "")).strip()
     prov = str(data.get("province", "")).strip()
     proj = str(data.get("project", "")).strip()
-
     if not all([num, prov, proj]):
         return jsonify(error="Missing parameters"), 400
-
     try:
         if prov == "Quebec" and num.upper().startswith("GM"):
             url = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{num}/"
@@ -389,10 +325,8 @@ def download_gm():
             cnt = download_ar_generic(num, prov, proj)
         else:
             return jsonify(error="Invalid province or AR#"), 400
-
         msg = f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded."
         return jsonify(message=msg), 200
-
     except requests.HTTPError as he:
         app.logger.error(f"HTTP error: {he}", exc_info=True)
         return jsonify(error=str(he)), 502
@@ -401,9 +335,7 @@ def download_gm():
         return jsonify(error=str(e)), 500
 
 # -----------------------------------------------------------------------------
-# Глобальний хендлер помилок:
-# - HTTPException (включно з 404) повертаємо як є
-# - решту — 500 JSON
+# Error handler
 # -----------------------------------------------------------------------------
 @app.errorhandler(Exception)
 def all_errors(e):
@@ -413,7 +345,7 @@ def all_errors(e):
     return jsonify(error="Internal server error"), 500
 
 # -----------------------------------------------------------------------------
-# Локальний запуск (на Render стартує gunicorn)
+# Local run
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
