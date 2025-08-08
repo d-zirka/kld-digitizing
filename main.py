@@ -154,11 +154,11 @@ def index():
         <section>
           <h2>API</h2>
           <div>POST <code>/download_gm</code></div>
-          <pre id="payload">{{
+          <pre id="payload">{{{{ 
   "ar_number": "GM123456" | "20000000",
   "province": "Quebec" | "Ontario" | "New Brunswick",
   "project": "MyProjectName"
-}}</pre>
+}}}}</pre>
           <div class="row">
             <button class="btn" onclick="copyJSON()">Copy JSON</button>
             <a class="btn" href="/healthz" target="_blank">Check health</a>
@@ -175,14 +175,14 @@ def index():
       </footer>
     </div>
   </div>
-<script>
-  function copyJSON(){
-    const txt = document.getElementById('payload').innerText;
-    navigator.clipboard.writeText(txt).then(() => {
-      alert('JSON payload copied');
-    });
-  }
-</script>
+  <script>
+    function copyJSON(){{ 
+      const txt = document.getElementById('payload').innerText;
+      navigator.clipboard.writeText(txt).then(() => {{ 
+        alert('JSON payload copied'); 
+      }});
+    }}
+  </script>
 </body>
 </html>"""
 
