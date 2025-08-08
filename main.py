@@ -171,10 +171,14 @@ def index():
         </section>
       </div>
 
-      <footer>
-        <div>Favicon: <code>/static/favicon.png</code> (optional)</div>
-        <div>Powered by Flask · Render</div>
-      </footer>
+<footer>
+  <div>
+    <span>Created by <b>Zirka</b> · chatGPT</span><br>
+    <span class="muted">Favicon: <code>/static/favicon.png</code> (optional)</span>
+  </div>
+  <div>Powered by Flask · Render</div>
+</footer>
+
     </div>
   </div>
   <script>
