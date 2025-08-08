@@ -68,42 +68,126 @@ def favicon():
 @app.route("/")
 def index():
     icon = url_for('static', filename='favicon.png')
-    return f"""
-<!DOCTYPE html>
+    return f"""<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Canadian AR Server</title>
   <link rel="icon" href="{icon}" type="image/png">
   <style>
-    body {{ font-family: sans-serif; padding: 2rem; line-height: 1.4; }}
-    h1 {{ font-size: 2.2em; margin-bottom: .5em; }}
-    pre {{ font-size: 1.05em; white-space: pre-wrap; }}
-    .muted {{ color:#666; }}
+    :root {{
+      --bg: #ffffff; --fg: #111827; --muted:#6b7280; --card:#f8fafc; --border:#e5e7eb; --accent:#2563eb;
+      --code:#0f172a; --ok:#10b981; --shadow: 0 6px 30px rgba(0,0,0,.06);
+    }}
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --bg:#0b1020; --fg:#e5e7eb; --muted:#9ca3af; --card:#0f172a; --border:#1f2937; --accent:#60a5fa;
+        --code:#e5e7eb; --ok:#34d399; --shadow: 0 8px 40px rgba(0,0,0,.35);
+      }}
+    }}
+    * {{ box-sizing: border-box; }}
+    html,body {{ height: 100%; }}
+    body {{
+      margin:0; background: var(--bg); color: var(--fg);
+      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      display:flex; align-items:center; justify-content:center; padding:24px;
+    }}
+    .wrap {{ width: 100%; max-width: 980px; }}
+    .card {{
+      background: var(--card); border:1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
+      padding: 28px; overflow:hidden;
+    }}
+    header {{ display:flex; gap:16px; align-items:center; margin-bottom: 14px; }}
+    .logo {{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#2563eb, #10b981); display:grid; place-items:center; color:white; font-weight:700; }}
+    h1 {{ font-size: clamp(22px, 3.2vw, 30px); margin:0; letter-spacing:.2px; }}
+    .tag {{ color:var(--ok); font-weight:600; font-size:13px; margin-left:auto; white-space:nowrap; }}
+    .grid {{ display:grid; grid-template-columns: 1fr; gap: 18px; margin-top: 10px; }}
+    @media(min-width:900px) {{ .grid {{ grid-template-columns: 1.1fr .9fr; }} }}
+    section {{ background: transparent; border:1px dashed var(--border); border-radius: 12px; padding:16px 18px; }}
+    h2 {{ margin:0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing:.12em; color:var(--muted); }}
+    ul {{ margin:10px 0 0 18px; padding:0; }}
+    li {{ margin: 6px 0; }}
+    code, pre {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }}
+    pre {{
+      margin: 10px 0 0; padding: 14px; border-radius: 10px; border:1px solid var(--border);
+      background: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.02));
+      color: var(--code); overflow:auto; font-size: 13px;
+    }}
+    .row {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }}
+    .pill {{ border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted); }}
+    .btn {{
+      appearance:none; border:1px solid var(--border); background:transparent; color:var(--fg);
+      padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600;
+    }}
+    .btn:hover {{ border-color: var(--accent); }}
+    footer {{ margin-top: 16px; color: var(--muted); font-size: 12px; display:flex; justify-content:space-between; align-items:center; }}
+    a {{ color: var(--accent); text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
   </style>
 </head>
 <body>
-  <h1>Canadian AR Server is running! 🚀</h1>
-  <pre>
-Functionality:
-• Download AR PDFs for Quebec (GM#) and Ontario
-• Create report folders and files for Quebec, Ontario, New Brunswick:
-    – Copy & rename Instructions.xlsx
-    – Copy & rename Geochemistry.gdb
-    – Copy & rename DDH.gdb
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div class="logo">AR</div>
+        <h1>Canadian AR Server is running <span aria-hidden="true">🚀</span></h1>
+        <div class="tag">healthy</div>
+      </header>
 
-API:
-POST /download_gm
-Body (JSON): {{
+      <div class="grid">
+        <section>
+          <h2>Functionality</h2>
+          <ul>
+            <li>Download AR PDFs for <b>Quebec (GM#)</b> and <b>Ontario</b></li>
+            <li>Create report structure & templates for <b>Quebec</b>, <b>Ontario</b>, <b>New Brunswick</b>:
+              <ul>
+                <li>Copy &amp; rename <code>Instructions.xlsx</code></li>
+                <li>Copy &amp; rename <code>Geochemistry.gdb</code></li>
+                <li>Copy &amp; rename <code>DDH.gdb</code></li>
+              </ul>
+            </li>
+          </ul>
+
+          <div class="row">
+            <span class="pill">Dropbox integrated</span>
+            <span class="pill">Timeouts &amp; retries</span>
+            <span class="pill">/healthz</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>API</h2>
+          <div>POST <code>/download_gm</code></div>
+          <pre id="payload">{{
   "ar_number": "GM123456" | "20000000",
   "province": "Quebec" | "Ontario" | "New Brunswick",
   "project": "MyProjectName"
-}}
-  </pre>
-  <p class="muted">Health: <code>/healthz</code></p>
+}}</pre>
+          <div class="row">
+            <button class="btn" onclick="copyJSON()">Copy JSON</button>
+            <a class="btn" href="/healthz" target="_blank" rel="noopener">Check health</a>
+          </div>
+        </section>
+      </div>
+
+      <footer>
+        <div>Favicon: <code>/static/favicon.png</code> (optional)</div>
+        <div>Powered by Flask · Render</div>
+      </footer>
+    </div>
+  </div>
+  <script>
+    function copyJSON(){{
+      const txt = document.getElementById('payload').innerText;
+      navigator.clipboard.writeText(txt).then(() => {{
+        alert('JSON payload copied');
+      }});
+    }}
+  </script>
 </body>
-</html>
-"""
+</html>"""
+
 
 # -----------------------------------------------------------------------------
 # Dropbox helpers
