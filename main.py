@@ -175,14 +175,14 @@ def index():
       </footer>
     </div>
   </div>
-  <script>
-    function copyJSON(){
-      const txt = document.getElementById('payload').innerText;
-      navigator.clipboard.writeText(txt).then(() => {
-        alert('JSON payload copied');
-      });
-    }
-  </script>
+<script>
+  function copyJSON(){
+    const txt = document.getElementById('payload').innerText;
+    navigator.clipboard.writeText(txt).then(() => {
+      alert('JSON payload copied');
+    });
+  }
+</script>
 </body>
 </html>"""
 
