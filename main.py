@@ -12,6 +12,9 @@ from urllib3.util.retry import Retry
 import dropbox
 from dropbox.files import WriteMode
 
+import io
+import pikepdf
+
 from flask import Flask, request, jsonify, url_for, send_from_directory
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
@@ -301,6 +304,64 @@ def download_ar_generic(ar_number: str, province: str, project: str,
         except Exception as e:
             app.logger.error(f"PDF upload error [{url}]: {e}")
     return count
+
+
+ASX_DROPBOX_PREFIX = "/KENORLAND_DIGITIZING/ASX/2 - WORKING/"
+
+def _is_allowed_asx_path(path: str) -> bool:
+    return isinstance(path, str) and path.startswith(ASX_DROPBOX_PREFIX)
+
+def _check_bearer(req) -> None:
+    expected = os.getenv("ASX_UNLOCK_TOKEN", "").strip()
+    if not expected:
+        return
+    if req.headers.get("Authorization", "") != f"Bearer {expected}":
+        raise PermissionError("Unauthorized")
+
+def _unlock_pdf_bytes(data: bytes) -> bytes:
+    try:
+        try:
+            pdf = pikepdf.open(io.BytesIO(data))
+        except pikepdf._qpdf.PasswordError:
+            return data  # якщо є user-password — лишаємо як є
+        out = io.BytesIO()
+        pdf.save(out, encryption=pikepdf.Encryption(owner="", user="", R=4,
+                 allow=pikepdf.Permissions(extract=True, print=True)))
+        pdf.close()
+        return out.getvalue()
+    except Exception:
+        return data
+
+@app.post("/asx_unlock_upload")
+def asx_unlock_upload():
+    try:
+        _check_bearer(request)
+    except PermissionError:
+        return jsonify(error="Unauthorized"), 401
+
+    f = request.files.get("file")
+    path = request.form.get("dropbox_path", "")
+    if not f or not path:
+        return jsonify(error="Missing file or dropbox_path"), 400
+    if not _is_allowed_asx_path(path):
+        return jsonify(error="Path not allowed"), 400
+
+    try:
+        data = f.read()
+        if not data:
+            return jsonify(error="Empty file"), 400
+
+        unlocked = _unlock_pdf_bytes(data)
+
+        token = get_dropbox_access_token()
+        dbx = dropbox.Dropbox(token)
+        dbx.files_upload(unlocked, path, mode=WriteMode.overwrite)
+
+        return jsonify(message="Uploaded (unlocked if possible)", path=path), 200
+    except Exception as e:
+        app.logger.error(f"/asx_unlock_upload error: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
 
 # -----------------------------------------------------------------------------
 # API route
