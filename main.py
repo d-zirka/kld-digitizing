@@ -90,13 +90,19 @@ def index():
     * {{ box-sizing:border-box; }}
     html,body {{ height:100%; }}
     body {{
-      margin:0; background:var(--bg); color:var(--fg);
+      margin:0;
+      background:var(--bg); color:var(--fg);
       font:15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      /* центр по обох осях, без зайвого скролу */
+      min-height:100svh;
+      display:grid; place-items:center;
+      overflow-x:hidden;
+      padding:clamp(12px, 2.5vw, 24px);
     }}
-    .wrap {{ width:100%; max-width:1060px; margin:24px auto; padding:0 16px; }}
     .card {{
+      width:100%; max-width:1060px;
       background:var(--card); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow);
-      padding:24px;
+      padding:clamp(18px, 2.8vw, 28px);
     }}
     header {{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }}
     .logo {{
@@ -106,7 +112,7 @@ def index():
     .logo span {{ font-size:13px; letter-spacing:.06em; }}
     h1 {{ font-size:clamp(22px,3.2vw,30px); margin:0; }}
     .tag {{ color:var(--ok); font-weight:600; font-size:13px; margin-left:auto; }}
-    section {{ border:1px dashed var(--border); border-radius:12px; padding:16px 18px; }}
+    section {{ border:1px dashed var(--border); border-radius:12px; padding:16px 18px; margin-top:14px; }}
     h2 {{ margin:0 0 10px; font-size:14px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }}
     .cols {{ display:grid; grid-template-columns:1fr; gap:16px; }}
     @media (min-width:900px) {{ .cols {{ grid-template-columns:1fr 1fr; }} }}
@@ -115,12 +121,17 @@ def index():
     ul {{ margin:8px 0 0 18px; padding:0; }}
     li {{ margin:6px 0; }}
     .badges {{
-      margin-top:12px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
+      margin-top:14px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
     }}
     .pill {{
-      border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted);
+      border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12px; color:var(--muted);
       background:rgba(0,0,0,.02);
     }}
+    .btn {{
+      border:1px solid var(--border); background:transparent; color:var(--fg);
+      padding:6px 12px; border-radius:10px; cursor:pointer; font-weight:600; text-decoration:none;
+    }}
+    .btn:hover {{ border-color:var(--accent); }}
     footer {{
       margin-top:16px; color:var(--muted); font-size:12px;
       display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
@@ -130,58 +141,57 @@ def index():
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <header>
-        <div class="logo"><span>KLD</span></div>
-        <h1>Kenorland Digitizing Server is running 🚀</h1>
-        <div class="tag">healthy</div>
-      </header>
+  <div class="card">
+    <header>
+      <div class="logo"><span>KLD</span></div>
+      <h1>Kenorland Digitizing Server is running 🚀</h1>
+      <div class="tag">healthy</div>
+    </header>
 
-      <section>
-        <h2>Functionality</h2>
-        <div class="cols">
-          <div class="colcard">
-            <div class="colhead">AR</div>
-            <ul>
-              <li>Download AR PDFs for <b>Quebec (GM#)</b> and <b>Ontario</b></li>
-              <li>Create report structure &amp; templates for <b>Quebec</b>, <b>Ontario</b>, <b>New Brunswick</b>:
-                <ul>
-                  <li>Copy &amp; rename <code>Instructions.xlsx</code></li>
-                  <li>Copy &amp; rename <code>Geochemistry.gdb</code></li>
-                  <li>Copy &amp; rename <code>DDH.gdb</code></li>
-                </ul>
-              </li>
-            </ul>
-          </div>
-
-          <div class="colcard">
-            <div class="colhead">ASX</div>
-            <ul>
-              <li>Auto-unlock &amp; upload ASX PDFs to Dropbox</li>
-              <li>Removes encryption and copy/print restrictions</li>
-              <li>Integrated with Google Apps Script</li>
-            </ul>
-          </div>
+    <section>
+      <h2>Functionality</h2>
+      <div class="cols">
+        <div class="colcard">
+          <div class="colhead">AR</div>
+          <ul>
+            <li>Download AR PDFs for <b>Quebec (GM#)</b> and <b>Ontario</b></li>
+            <li>Create report structure &amp; templates for <b>Quebec</b>, <b>Ontario</b>, <b>New Brunswick</b>:
+              <ul>
+                <li>Copy &amp; rename <code>Instructions.xlsx</code></li>
+                <li>Copy &amp; rename <code>Geochemistry.gdb</code></li>
+                <li>Copy &amp; rename <code>DDH.gdb</code></li>
+              </ul>
+            </li>
+          </ul>
         </div>
 
-        <!-- Global badges row (centered, applies to whole server) -->
-        <div class="badges">
-          <span class="pill">Dropbox integrated</span>
-          <span class="pill">Timeouts &amp; retries</span>
-          <span class="pill">/healthz</span>
-          <span class="pill">ASX unlock API</span>
+        <div class="colcard">
+          <div class="colhead">ASX</div>
+          <ul>
+            <li>Auto-unlock &amp; upload ASX PDFs to Dropbox</li>
+            <li>Removes encryption and copy/print restrictions</li>
+            <li>Integrated with Google Apps Script</li>
+          </ul>
         </div>
-      </section>
+      </div>
 
-      <footer>
-        <div>Powered by <b>Flask</b> · <b>Render</b></div>
-        <div>Created by <b>Zirka</b> · chatGPT</div>
-      </footer>
-    </div>
+      <!-- Global badges row (centered, applies to whole server) -->
+      <div class="badges">
+        <span class="pill">Dropbox integrated</span>
+        <span class="pill">Timeouts &amp; retries</span>
+        <a class="btn" href="/healthz" target="_blank" rel="noopener">Check health</a>
+        <span class="pill">ASX unlock API</span>
+      </div>
+    </section>
+
+    <footer>
+      <div>Powered by <b>Flask</b> · <b>Render</b></div>
+      <div>Created by <b>Zirka</b> · chatGPT</div>
+    </footer>
   </div>
 </body>
 </html>"""
+
 
 
 # -----------------------------------------------------------------------------
