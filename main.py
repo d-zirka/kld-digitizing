@@ -65,6 +65,7 @@ def favicon():
 # -----------------------------------------------------------------------------
 # Головна сторінка
 # -----------------------------------------------------------------------------
+
 @app.route("/")
 def index():
     icon = url_for('static', filename='favicon.png')
@@ -73,11 +74,11 @@ def index():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Canadian AR Server</title>
+  <title>Kenorland Digitizing</title>
   <link rel="icon" href="{icon}" type="image/png">
   <style>
     :root {{
-      --bg: #ffffff; --fg: #111827; --muted:#6b7280; --card:#f8fafc; --border:#e5e7eb; --accent:#2563eb;
+      --bg:#ffffff; --fg:#111827; --muted:#6b7280; --card:#f8fafc; --border:#e5e7eb; --accent:#2563eb;
       --code:#0f172a; --ok:#10b981; --shadow: 0 6px 30px rgba(0,0,0,.06);
     }}
     @media (prefers-color-scheme: dark) {{
@@ -87,43 +88,56 @@ def index():
       }}
     }}
     * {{ box-sizing: border-box; }}
-    html,body {{ height: 100%; }}
+    html, body {{ height:100%; }}
     body {{
-      margin:0; background: var(--bg); color: var(--fg);
-      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
-      display:flex; align-items:center; justify-content:center; padding:24px;
+      margin:0; background:var(--bg); color:var(--fg);
+      font:15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      /* ВАЖЛИВО: без фуллцентр-флексу, щоб на мобільних нічого не обрізалось */
     }}
-    .wrap {{ width: 100%; max-width: 980px; }}
+    .wrap {{ width:100%; max-width:1060px; margin:24px auto; padding:0 16px; }}
     .card {{
-      background: var(--card); border:1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
-      padding: 28px; overflow:hidden;
+      background:var(--card); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow);
+      padding:24px;
     }}
-    header {{ display:flex; gap:16px; align-items:center; margin-bottom: 14px; }}
-    .logo {{ width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#2563eb, #10b981);
-             display:grid; place-items:center; color:white; font-weight:700; }}
-    h1 {{ font-size: clamp(22px, 3.2vw, 30px); margin:0; }}
+    header {{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }}
+    .logo {{
+      width:36px; height:36px; border-radius:10px;
+      background:linear-gradient(135deg,#2563eb,#10b981);
+      display:grid; place-items:center; color:#fff; font-weight:700;
+      flex:0 0 auto;
+    }}
+    h1 {{ font-size:clamp(22px,3.2vw,30px); margin:0; }}
     .tag {{ color:var(--ok); font-weight:600; font-size:13px; margin-left:auto; }}
-    .grid {{ display:grid; grid-template-columns: 1fr; gap: 18px; margin-top: 10px; }}
-    @media(min-width:900px) {{ .grid {{ grid-template-columns: 1.1fr .9fr; }} }}
-    section {{ border:1px dashed var(--border); border-radius: 12px; padding:16px 18px; }}
-    h2 {{ margin:0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing:.12em; color:var(--muted); }}
-    ul {{ margin:10px 0 0 18px; padding:0; }}
-    li {{ margin: 6px 0; }}
+    .grid {{ display:grid; grid-template-columns:1fr; gap:18px; margin-top:14px; }}
+    section {{ border:1px dashed var(--border); border-radius:12px; padding:16px 18px; }}
+    h2 {{ margin:0 0 10px; font-size:14px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }}
+    h3 {{ margin:0 0 8px; font-size:15px; color:var(--fg); }}
+    ul {{ margin:8px 0 0 18px; padding:0; }}
+    li {{ margin:6px 0; }}
     code, pre {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas; }}
     pre {{
-      margin: 10px 0 0; padding: 14px; border-radius: 10px; border:1px solid var(--border);
-      background: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.02));
-      color: var(--code); overflow:auto; font-size: 13px;
+      margin:10px 0 0; padding:14px; border-radius:10px; border:1px solid var(--border);
+      background:linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.02));
+      color:var(--code); overflow:auto; font-size:13px;
     }}
     .row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }}
     .pill {{ border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted); }}
     .btn {{ border:1px solid var(--border); background:transparent; color:var(--fg);
-           padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; }}
-    .btn:hover {{ border-color: var(--accent); }}
-    footer {{ margin-top: 16px; color: var(--muted); font-size: 12px;
-              display:flex; justify-content:space-between; align-items:center; }}
-    a {{ color: var(--accent); text-decoration: none; }}
-    a:hover {{ text-decoration: underline; }}
+           padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600; text-decoration:none; display:inline-block; }}
+    .btn:hover {{ border-color:var(--accent); }}
+    footer {{ margin-top:16px; color:var(--muted); font-size:12px;
+              display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }}
+    a {{ color:var(--accent); text-decoration:none; }}
+    a:hover {{ text-decoration:underline; }}
+
+    /* Дві колонки для Functionality на десктопі */
+    .cols {{ display:grid; grid-template-columns:1fr; gap:16px; }}
+    @media (min-width:900px) {{
+      .grid {{ grid-template-columns: 1.1fr .9fr; }}
+      .cols {{ grid-template-columns:1fr 1fr; }}
+    }}
+    .colcard {{ border:1px solid var(--border); border-radius:12px; padding:16px 18px; background:#fff0; }}
+    .colhead {{ font-weight:700; margin-bottom:8px; }}
   </style>
 </head>
 <body>
@@ -131,29 +145,49 @@ def index():
     <div class="card">
       <header>
         <div class="logo">AR</div>
-        <h1>Canadian AR Server is running 🚀</h1>
+        <h1>Kenorland Digitizing Server is running 🚀</h1>
         <div class="tag">healthy</div>
       </header>
 
       <div class="grid">
         <section>
           <h2>Functionality</h2>
-          <ul>
-            <li>Download AR PDFs for <b>Quebec (GM#)</b> and <b>Ontario</b></li>
-            <li>Create report structure & templates for <b>Quebec</b>, <b>Ontario</b>, <b>New Brunswick</b>:
+          <div class="cols">
+            <div class="colcard">
+              <div class="colhead">AR</div>
               <ul>
-                <li>Copy &amp; rename <code>Instructions.xlsx</code></li>
-                <li>Copy &amp; rename <code>Geochemistry.gdb</code></li>
-                <li>Copy &amp; rename <code>DDH.gdb</code></li>
+                <li>Download AR PDFs for <b>Quebec (GM#)</b> та <b>Ontario</b></li>
+                <li>Створення структури та шаблонів для <b>Quebec</b>, <b>Ontario</b>, <b>New Brunswick</b>:
+                  <ul>
+                    <li>Копія &amp; перейменування <code>Instructions.xlsx</code></li>
+                    <li>Копія &amp; перейменування <code>Geochemistry.gdb</code></li>
+                    <li>Копія &amp; перейменування <code>DDH.gdb</code></li>
+                  </ul>
+                </li>
               </ul>
-            </li>
-          </ul>
-          <div class="row">
-            <span class="pill">Dropbox integrated</span>
-            <span class="pill">Timeouts &amp; retries</span>
-            <span class="pill">/healthz</span>
+              <div class="row">
+                <span class="pill">Dropbox integrated</span>
+                <span class="pill">Timeouts &amp; retries</span>
+                <span class="pill">/healthz</span>
+              </div>
+            </div>
+
+            <div class="colcard">
+              <div class="colhead">ASX</div>
+              <ul>
+                <li>Авто-розблокування та аплоад <b>ASX PDFs</b> у потрібну папку Dropbox</li>
+                <li>Підтримка файлів із порожнім user-паролем та owner-обмеженнями</li>
+                <li>Інтегровано з Google Apps Script (ASX sheet)</li>
+              </ul>
+              <div class="row">
+                <span class="pill">Unlock on upload</span>
+                <span class="pill">Owner flags removed</span>
+                <span class="pill">No password prompts</span>
+              </div>
+            </div>
           </div>
         </section>
+
         <section>
           <h2>API</h2>
           <div>POST <code>/download_gm</code></div>
@@ -179,15 +213,16 @@ def index():
     </div>
   </div>
   <script>
-    function copyJSON(){{ 
+    function copyJSON(){{
       const txt = document.getElementById('payload').innerText;
-      navigator.clipboard.writeText(txt).then(() => {{ 
-        alert('JSON payload copied'); 
+      navigator.clipboard.writeText(txt).then(() => {{
+        alert('JSON payload copied');
       }});
     }}
   </script>
 </body>
 </html>"""
+
 
 # -----------------------------------------------------------------------------
 # Dropbox helpers
