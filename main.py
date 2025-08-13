@@ -114,9 +114,17 @@ def index():
     .colhead {{ font-weight:700; margin-bottom:8px; }}
     ul {{ margin:8px 0 0 18px; padding:0; }}
     li {{ margin:6px 0; }}
-    .pill {{ border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted); margin-right:8px; }}
-    footer {{ margin-top:16px; color:var(--muted); font-size:12px;
-              display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }}
+    .badges {{
+      margin-top:12px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
+    }}
+    .pill {{
+      border:1px solid var(--border); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted);
+      background:rgba(0,0,0,.02);
+    }}
+    footer {{
+      margin-top:16px; color:var(--muted); font-size:12px;
+      display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+    }}
     a {{ color:var(--accent); text-decoration:none; }}
     a:hover {{ text-decoration:underline; }}
   </style>
@@ -145,11 +153,6 @@ def index():
                 </ul>
               </li>
             </ul>
-            <div style="margin-top:10px;">
-              <span class="pill">Dropbox integrated</span>
-              <span class="pill">Timeouts &amp; retries</span>
-              <span class="pill">/healthz</span>
-            </div>
           </div>
 
           <div class="colcard">
@@ -161,19 +164,25 @@ def index():
             </ul>
           </div>
         </div>
+
+        <!-- Global badges row (centered, applies to whole server) -->
+        <div class="badges">
+          <span class="pill">Dropbox integrated</span>
+          <span class="pill">Timeouts &amp; retries</span>
+          <span class="pill">/healthz</span>
+          <span class="pill">ASX unlock API</span>
+        </div>
       </section>
 
       <footer>
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <div>Created by <b>Zirka</b> · chatGPT</div>
-          <div>Powered by Flask · Render</div>
-        </div>
-        <div class="muted">Favicon: <code>/static/favicon.png</code> (optional)</div>
+        <div>Powered by <b>Flask</b> · <b>Render</b></div>
+        <div>Created by <b>Zirka</b> · chatGPT</div>
       </footer>
     </div>
   </div>
 </body>
 </html>"""
+
 
 # -----------------------------------------------------------------------------
 # Dropbox helpers
