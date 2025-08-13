@@ -68,6 +68,7 @@ def favicon():
 
 @app.route("/")
 def index():
+    from flask import render_template_string  # safety if you run this block alone
     return render_template_string("""
 <!DOCTYPE html>
 <html lang="en">
@@ -77,65 +78,51 @@ def index():
   <title>Kenorland Digitizing</title>
   <link rel="icon" href="/static/favicon.png">
   <style>
-    :root {
-      --bg:#f5f7fa; --fg:#111827; --muted:#6b7280; --card:#ffffff; --subcard:#fafafa; --border:#e5e7eb; --accent:#2563eb; --ok:#10b981; --danger:#ef4444;
-      --shadow: 0 8px 28px rgba(0,0,0,.08);
+    :root{
+      --bg:#f5f7fa; --fg:#111827; --muted:#6b7280; --card:#ffffff; --subcard:#fafafa; --border:#e5e7eb;
+      --accent:#2563eb; --ok:#10b981; --danger:#ef4444; --shadow:0 8px 28px rgba(0,0,0,.08);
     }
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
       margin:0;background:var(--bg);color:var(--fg);
       font:15px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
-      display:flex;align-items:center;justify-content:center;padding:20px;
-      overflow-x:hidden;
+      display:flex;align-items:center;justify-content:center;padding:20px;overflow-x:hidden;
     }
-    .wrap{
-      width:100%;max-width:1100px;
-      background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
-      padding:24px;
-    }
+    .wrap{width:100%;max-width:1000px;background:var(--card);border:1px solid var(--border);
+      border-radius:16px;box-shadow:var(--shadow);padding:24px}
     header{display:flex;gap:12px;align-items:center;margin-bottom:8px}
-    .logo{
-      width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#10b981);
-      display:grid;place-items:center;color:white;font-weight:700
-    }
+    .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#10b981);
+      display:grid;place-items:center;color:#fff;font-weight:700}
     h1{margin:0;font-size:clamp(22px,3vw,30px)}
     .tag{color:var(--ok);font-weight:600;margin-left:auto}
     h2{margin:10px 0 12px;font-size:14px;letter-spacing:.12em;color:var(--muted)}
     .cols{display:grid;grid-template-columns:1fr;gap:16px}
-    @media (min-width:900px){
-      .cols{grid-template-columns:auto auto;justify-content:start}
-    }
+    @media (min-width:900px){ .cols{grid-template-columns:1fr 1fr} }  /* симетрично */
     section{border:1px solid var(--border);border-radius:12px;padding:16px 18px;background:var(--subcard)}
     section h3{margin:0 0 6px}
     ul{margin:8px 0 0 18px;padding:0}
-    .buttons{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px}
+
+    /* chips + actions */
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px}
+    .chip{
+      display:inline-block;background:#f3f4f6;border:1px solid var(--border);color:var(--muted);
+      padding:8px 14px;border-radius:999px;font-weight:600;cursor:default;user-select:none;
+    }
     .btn{
       border:1px solid var(--border);background:#f3f4f6;color:var(--fg);
-      padding:8px 14px;border-radius:999px;font-weight:600;cursor:pointer
+      padding:8px 14px;border-radius:999px;font-weight:700;cursor:pointer;
     }
     .btn:hover{border-color:var(--accent)}
-    footer{
-      display:flex;justify-content:space-between;align-items:center;
-      margin-top:14px;color:var(--muted);font-size:12px
-    }
+    footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12px}
     footer b{font-weight:700}
 
     /* modal */
-    .modal-backdrop{
-      position:fixed;inset:0;background:rgba(0,0,0,.35);
-      display:none;align-items:center;justify-content:center;padding:16px;z-index:50
-    }
-    .modal{
-      width:min(520px,100%);background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
-      padding:18px
-    }
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+    .modal{width:min(520px,100%);background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px}
     .modal h4{margin:0 0 8px;font-size:16px}
-    .status-pill{
-      display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-weight:700
-    }
-    .ok{color:var(--ok);border-color:var(--ok)}
-    .bad{color:var(--danger);border-color:var(--danger)}
+    .status-pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-weight:700}
+    .ok{color:var(--ok);border-color:var(--ok)} .bad{color:var(--danger);border-color:var(--danger)}
     .modal .actions{margin-top:12px;display:flex;justify-content:flex-end}
   </style>
 </head>
@@ -172,16 +159,17 @@ def index():
       </section>
     </div>
 
-    <div class="buttons">
-      <button class="btn">Dropbox integrated</button>
-      <button class="btn">Google Apps Script integrated</button>
-      <button class="btn">Timeouts & retries</button>
-      <button class="btn" onclick="checkHealth()"><b>Check health</b></button>
-      <button class="btn">ASX unlock API</button>
+    <!-- Chips (не клікабельні) + одна дія «Check health» — усе по центру -->
+    <div class="toolbar">
+      <span class="chip">Dropbox integrated</span>
+      <span class="chip">Google Apps Script integrated</span>
+      <span class="chip">Timeouts & retries</span>
+      <button class="btn" onclick="checkHealth()">Check health</button>
+      <span class="chip">ASX unlock API</span>
     </div>
 
     <footer>
-      <div>Powered by <b>Flask</b> · Render</div>
+      <div>Powered by <b>Flask</b> · <b>Render</b></div>
       <div>Created by <b>Zirka</b> · <b>chatGPT</b></div>
     </footer>
   </div>
@@ -191,48 +179,35 @@ def index():
     <div class="modal">
       <h4 id="healthTitle">Service health</h4>
       <div id="healthBody">Checking…</div>
-      <div class="actions">
-        <button class="btn" onclick="closeModal()">Close</button>
-      </div>
+      <div class="actions"><button class="btn" onclick="closeModal()">Close</button></div>
     </div>
   </div>
 
   <script>
     const backdrop = document.getElementById('backdrop');
     const bodyEl = document.getElementById('healthBody');
-
-    function openModal() {
-      backdrop.style.display = 'flex';
-    }
-    function closeModal() {
-      backdrop.style.display = 'none';
-    }
-    async function checkHealth() {
-      openModal();
-      bodyEl.innerHTML = 'Checking…';
-      try {
-        const res = await fetch('/healthz', { cache: 'no-store' });
+    function openModal(){ backdrop.style.display='flex'; }
+    function closeModal(){ backdrop.style.display='none'; }
+    async function checkHealth(){
+      openModal(); bodyEl.innerHTML='Checking…';
+      try{
+        const res = await fetch('/healthz', { cache:'no-store' });
         const text = await res.text();
         const ok = res.ok && text.trim().toLowerCase().includes('ok');
         bodyEl.innerHTML = ok
           ? 'Status: <span class="status-pill ok">OK</span>'
-          : 'Status: <span class="status-pill bad">Unavailable</span><div style="margin-top:6px;color:#6b7280;">'+
-            'Response: <code>'+escapeHtml(text)+'</code></div>';
-      } catch (e) {
+          : 'Status: <span class="status-pill bad">Unavailable</span><div style="margin-top:6px;color:#6b7280;">Response: <code>'+escapeHtml(text)+'</code></div>';
+      }catch(e){
         bodyEl.innerHTML = 'Status: <span class="status-pill bad">Error</span><div style="margin-top:6px;"><code>'+escapeHtml(String(e))+'</code></div>';
       }
     }
-    function escapeHtml(s){
-      return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-    }
-    // закриття по кліку поза модалкою / або Esc
-    backdrop.addEventListener('click', e => { if (e.target === backdrop) closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeModal(); });
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
   </script>
 </body>
 </html>
 """)
-
 
 
 # -----------------------------------------------------------------------------
