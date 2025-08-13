@@ -319,18 +319,38 @@ def _check_bearer(req) -> None:
         raise PermissionError("Unauthorized")
 
 def _unlock_pdf_bytes(data: bytes) -> bytes:
-    try:
+    """
+    Знімає owner-обмеження та прибирає шифрування.
+    Підтримує кейс із порожнім user-password ("").
+    Якщо справді потрібен пароль на відкриття (непорожній) або сталася помилка — повертає оригінал.
+    """
+    import io
+    import pikepdf
+
+    # Спробувати без пароля, потім з порожнім паролем
+    for pw in (None, ""):
         try:
-            pdf = pikepdf.open(io.BytesIO(data))
-        except pikepdf._qpdf.PasswordError:
-            return data  # якщо є user-password — лишаємо як є
-        out = io.BytesIO()
-        pdf.save(out, encryption=pikepdf.Encryption(owner="", user="", R=4,
-                 allow=pikepdf.Permissions(extract=True, print=True)))
-        pdf.close()
-        return out.getvalue()
-    except Exception:
-        return data
+            pdf = pikepdf.open(io.BytesIO(data), password=pw)
+            try:
+                out = io.BytesIO()
+                # ВАЖЛИВО: зберігаємо БЕЗ encryption= — файл стає нешифрований і без "Enter password"
+                pdf.save(out)
+                pdf.close()
+                return out.getvalue()
+            finally:
+                try:
+                    pdf.close()
+                except Exception:
+                    pass
+        except (pikepdf.PasswordError, getattr(pikepdf, "_qpdf", type("", (), {})) .__dict__.get("PasswordError", Exception)):
+            # потрібен справжній user-password (непорожній) — пропускаємо цикл/повернемо оригінал
+            continue
+        except Exception:
+            # будь-яка інша помилка — переходимо до повернення оригіналу
+            break
+
+    return data
+
 
 @app.post("/asx_unlock_upload")
 def asx_unlock_upload():
