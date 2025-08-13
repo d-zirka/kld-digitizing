@@ -93,7 +93,6 @@ def index():
       margin:0;
       background:var(--bg); color:var(--fg);
       font:15px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
-      /* центр по обох осях, без зайвого скролу */
       min-height:100svh;
       display:grid; place-items:center;
       overflow-x:hidden;
@@ -168,9 +167,8 @@ def index():
         <div class="colcard">
           <div class="colhead">ASX</div>
           <ul>
-            <li>Auto-unlock &amp; upload ASX PDFs to Dropbox</li>
+            <li>Auto-unlock ASX PDFs</li>
             <li>Removes encryption and copy/print restrictions</li>
-            <li>Integrated with Google Apps Script</li>
           </ul>
         </div>
       </div>
@@ -178,6 +176,7 @@ def index():
       <!-- Global badges row (centered, applies to whole server) -->
       <div class="badges">
         <span class="pill">Dropbox integrated</span>
+        <span class="pill">Google Apps Script integrated</span>
         <span class="pill">Timeouts &amp; retries</span>
         <a class="btn" href="/healthz" target="_blank" rel="noopener">Check health</a>
         <span class="pill">ASX unlock API</span>
@@ -186,12 +185,11 @@ def index():
 
     <footer>
       <div>Powered by <b>Flask</b> · <b>Render</b></div>
-      <div>Created by <b>Zirka</b> · chatGPT</div>
+      <div>Created by <b>Zirka</b> · <b>chatGPT</b></div>
     </footer>
   </div>
 </body>
 </html>"""
-
 
 
 # -----------------------------------------------------------------------------
