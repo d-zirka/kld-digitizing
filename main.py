@@ -15,7 +15,7 @@ from dropbox.files import WriteMode
 import io
 import pikepdf
 
-from flask import Flask, request, jsonify, url_for, send_from_directory
+from flask import Flask, request, jsonify, url_for, send_from_directory, render_template_string
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
 
