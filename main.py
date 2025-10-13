@@ -142,8 +142,8 @@ def index():
       <section>
         <h3>AR</h3>
         <ul>
-          <li>Download AR PDFs for <b>Quebec (GM#)</b> and <b>Ontario</b></li>
-          <li>Create report structure & templates for <b>Quebec, Ontario, New Brunswick</b>:
+          <li>Download AR PDFs for <b>Quebec (GM#)</b>, <b>Ontario</b>, and <b>Manitoba</b></li>
+          <li>Create report structure & templates for <b>QC, ON, NB, MB</b>:
             <ul>
               <li>Copy & rename <i>Instructions.xlsx</i></li>
               <li>Copy & rename <i>Geochemistry.gdb</i></li>
