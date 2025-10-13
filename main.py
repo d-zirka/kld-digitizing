@@ -112,7 +112,7 @@ def index():
       user-select:none;pointer-events:none; /* не клікається */
     }
     .btn{
-      border:1px solid var(--border);background:#fff;color:var(--fg);
+      border:1px solid var(--border);background:#fff;color:#fg;
       font-size:13px;padding:8px 14px;border-radius:999px;font-weight:700;cursor:pointer;
     }
     .btn:hover{border-color:var(--accent)}
@@ -335,6 +335,50 @@ def download_ar_generic(ar_number: str, province: str, project: str,
     return count
 
 
+# -------------------- ADD: Manitoba direct-download logic --------------------
+def download_ar_manitoba(ar_number: str, province: str, project: str) -> int:
+    """
+    Manitoba: пряме завантаження одного PDF:
+    https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf
+    """
+    token = get_dropbox_access_token()
+    dbx = dropbox.Dropbox(token)
+
+    base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
+    instr = f"{base}/Instructions"
+    srcdata = f"{base}/Source Data"
+
+    # Створення тек та копіювання шаблонів — ідентично іншим провінціям
+    for p in (base, instr, srcdata):
+        ensure_folder(dbx, p)
+    try:
+        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
+                          f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"Instructions copy failed: {e}")
+    try:
+        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
+                          f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"Geochemistry copy failed: {e}")
+    try:
+        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
+                          f"{base}/{ar_number}_DDH.gdb", autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"DDH copy failed: {e}")
+
+    # Прямий PDF без суфіксів
+    url = f"https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf"
+    content = _try_get(url)
+    if not content:
+        return 0
+
+    filename = os.path.basename(urlparse(url).path) or f"{ar_number}.pdf"
+    dbx.files_upload(content, f"{srcdata}/{filename}", mode=WriteMode.overwrite)
+    return 1
+# -----------------------------------------------------------------------------
+
+
 ASX_DROPBOX_PREFIX = "/KENORLAND_DIGITIZING/ASX/2 - WORKING/"
 
 def _is_allowed_asx_path(path: str) -> bool:
@@ -433,6 +477,8 @@ def download_gm():
             cnt = download_ar_generic(num, prov, proj, url, blob)
         elif prov == "New Brunswick":
             cnt = download_ar_generic(num, prov, proj)
+        elif prov == "Manitoba":
+            cnt = download_ar_manitoba(num, prov, proj)
         else:
             return jsonify(error="Invalid province or AR#"), 400
         msg = f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded."
