@@ -128,6 +128,7 @@ def index():
     footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12px}
     footer b{font-weight:700}
   </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
   <div class="wrap">
@@ -170,6 +171,14 @@ def index():
       <span class="chip">ASX unlock API</span>
     </div>
 
+        <!-- ===== STATS SECTION ===== -->
+    <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px">
+      <h2 class="text-xl font-semibold">Статистика проєктів</h2>
+      <div class="mt-4">
+        <canvas id="projChart" height="140"></canvas>
+      </div>
+    </section>
+
     <footer>
       <div>Powered by <b>Flask</b> · <b>Render</b></div>
       <div>Created by <b>Zirka</b> · <b>chatGPT</b></div>
@@ -211,6 +220,41 @@ def index():
     function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
     backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeModal(); });
     document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+      // ====== Chart: project stats ======
+  async function initChart() {
+    try {
+      const res = await fetch('/api/stats', { cache: 'no-store' });
+      const data = await res.json();
+      const labels = data.labels || [];
+      const values = data.values || [];
+
+      const ctx = document.getElementById('projChart');
+      if (!ctx) return;
+
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'К-сть завантажених PDF / дій',
+            data: values
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: true } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+      });
+    } catch (e) {
+      console.error('Chart init error:', e);
+    }
+  }
+
+  // Запуск при завантаженні сторінки
+  document.addEventListener('DOMContentLoaded', initChart);
+    
   </script>
 </body>
 </html>
@@ -503,6 +547,21 @@ def all_errors(e):
 # -----------------------------------------------------------------------------
 # Local run
 # -----------------------------------------------------------------------------
+
+@app.get("/api/stats")
+def api_stats():
+    """
+    Поки що повертаємо прості тестові дані.
+    Потім підмінимо на реальні (напр., скільки PDF завантажено по провінціях).
+    """
+    data = {
+        "labels": ["Quebec", "Ontario", "Manitoba", "New Brunswick"],
+        "values": [12, 9, 4, 2]  # тимчасові числа
+    }
+    return jsonify(data), 200
+
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
