@@ -4,6 +4,9 @@ import logging
 from typing import Optional, List
 from urllib.parse import urljoin, urlparse
 from itertools import product
+from flask_cors import CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
 
 import requests
 from requests.adapters import HTTPAdapter
