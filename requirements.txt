@@ -4,3 +4,4 @@ dropbox
 beautifulsoup4
 gunicorn
 pikepdf==9.0.0
+flask-cors
