@@ -144,7 +144,7 @@ def index():
         <h3>AR</h3>
         <ul>
           <li>Download AR PDFs for <b>Quebec</b>, <b>Ontario</b>, <b>Manitoba</b></li>
-          <li>Create report structure & templates for <b>QC, ON, NB, MB</b>:
+          <li>Create report structure & templates for <b>QC, ON, NB, MB, NU</b>:
             <ul>
               <li>Copy & rename <i>Instructions.xlsx</i></li>
               <li>Copy & rename <i>Geochemistry.gdb</i></li>
@@ -521,6 +521,8 @@ def download_gm():
             cnt = download_ar_generic(num, prov, proj, url, blob)
         elif prov == "New Brunswick":
             cnt = download_ar_generic(num, prov, proj)
+        elif prov == "Nunavut":
+            cnt = download_ar_generic(num, prov, proj)
         elif prov == "Manitoba":
             cnt = download_ar_manitoba(num, prov, proj)
         else:
@@ -555,8 +557,8 @@ def api_stats():
     Потім підмінимо на реальні (напр., скільки PDF завантажено по провінціях).
     """
     data = {
-        "labels": ["Quebec", "Ontario", "Manitoba", "New Brunswick"],
-        "values": [12, 9, 4, 2]  # тимчасові числа
+        "labels": ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut"],
+        "values": [12, 9, 4, 2, 0]  # тимчасові числа
     }
     return jsonify(data), 200
 
