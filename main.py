@@ -687,9 +687,10 @@ def asx_create_xlsx_dropbox_test():
     if not output_path:
         return jsonify({"ok": False, "error": "output_path is required"}), 400
 
-    token = os.environ.get('DROPBOX_TOKEN', '').strip()
-    if not token:
-        return jsonify({"ok": False, "error": "DROPBOX_TOKEN is not set on server"}), 500
+    try:
+        token = get_dropbox_access_token()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Dropbox auth failed: {str(e)}"}), 500
 
     try:
         # 1. Завантажуємо шаблон з Dropbox
