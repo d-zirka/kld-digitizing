@@ -1,5 +1,7 @@
 import os
 import base64
+import tempfile
+import json
 import logging
 from typing import Optional, List
 from urllib.parse import urljoin, urlparse
@@ -8,6 +10,8 @@ from itertools import product
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from io import BytesIO
+from openpyxl import load_workbook
 
 import dropbox
 from dropbox.files import WriteMode
@@ -26,6 +30,52 @@ from openpyxl import Workbook
 # Flask app & logging
 # -----------------------------------------------------------------------------
 app = Flask(__name__)
+
+def dropbox_download_file(dropbox_path, token):
+    url = 'https://content.dropboxapi.com/2/files/download'
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Dropbox-API-Arg': json.dumps({'path': dropbox_path})
+    }
+
+    resp = requests.post(url, headers=headers)
+    if resp.status_code != 200:
+        raise Exception(f'Dropbox download error {resp.status_code}: {resp.text}')
+
+    return resp.content
+
+
+def dropbox_upload_file(dropbox_path, file_bytes, token):
+    url = 'https://content.dropboxapi.com/2/files/upload'
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/octet-stream',
+        'Dropbox-API-Arg': json.dumps({
+            'path': dropbox_path,
+            'mode': 'overwrite',
+            'autorename': False,
+            'mute': True,
+            'strict_conflict': False
+        })
+    }
+
+    resp = requests.post(url, headers=headers, data=file_bytes)
+    if resp.status_code != 200:
+        raise Exception(f'Dropbox upload error {resp.status_code}: {resp.text}')
+
+    return resp.json()
+
+
+def safe_sheet_name(name, fallback):
+    name = str(name or '').strip()
+    if not name:
+        name = fallback
+
+    invalid_chars = ['\\', '/', '?', '*', '[', ']', ':']
+    for ch in invalid_chars:
+        name = name.replace(ch, '_')
+
+    return name[:31]
 
 logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
@@ -619,6 +669,74 @@ def asx_create_xlsx_rename_test():
         "report_id": report_id,
         "sheet_names": wb.sheetnames
     }), 200
+
+@app.route('/asx_create_xlsx_dropbox_test', methods=['POST'])
+def asx_create_xlsx_dropbox_test():
+    data = request.get_json(silent=True) or {}
+
+    report_id = str(data.get('report_id') or '').strip()
+    template_path = str(data.get('template_path') or '').strip()
+    output_path = str(data.get('output_path') or '').strip()
+
+    if not report_id:
+        return jsonify({"ok": False, "error": "report_id is required"}), 400
+
+    if not template_path:
+        return jsonify({"ok": False, "error": "template_path is required"}), 400
+
+    if not output_path:
+        return jsonify({"ok": False, "error": "output_path is required"}), 400
+
+    token = os.environ.get('DROPBOX_TOKEN', '').strip()
+    if not token:
+        return jsonify({"ok": False, "error": "DROPBOX_TOKEN is not set on server"}), 500
+
+    try:
+        # 1. Завантажуємо шаблон з Dropbox
+        file_bytes = dropbox_download_file(template_path, token)
+
+        # 2. Відкриваємо workbook з пам'яті
+        wb = load_workbook(BytesIO(file_bytes))
+
+        # 3. Формуємо нові назви аркушів
+        drilling_name = safe_sheet_name(f'{report_id}_Drilling', 'Drilling')
+        surface_name = safe_sheet_name(f'{report_id}_SurfaceGeochemistry', 'SurfaceGeochemistry')
+
+        # 4. Перейменовуємо, якщо аркуші існують
+        renamed = []
+
+        if 'Report_ID_Drilling' in wb.sheetnames:
+            wb['Report_ID_Drilling'].title = drilling_name
+            renamed.append(drilling_name)
+
+        if 'Report_ID_SurfaceGeochemistry' in wb.sheetnames:
+            wb['Report_ID_SurfaceGeochemistry'].title = surface_name
+            renamed.append(surface_name)
+
+        # 5. Зберігаємо в пам'ять
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # 6. Завантажуємо новий файл назад у Dropbox
+        upload_result = dropbox_upload_file(output_path, output.getvalue(), token)
+
+        return jsonify({
+            "ok": True,
+            "message": "Dropbox XLSX created successfully",
+            "report_id": report_id,
+            "template_path": template_path,
+            "output_path": output_path,
+            "sheet_names": wb.sheetnames,
+            "renamed": renamed,
+            "dropbox_result": upload_result
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
