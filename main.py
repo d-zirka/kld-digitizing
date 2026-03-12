@@ -19,6 +19,9 @@ from flask import Flask, request, jsonify, url_for, send_from_directory, render_
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
 
+from io import BytesIO
+from openpyxl import Workbook
+
 # -----------------------------------------------------------------------------
 # Flask app & logging
 # -----------------------------------------------------------------------------
@@ -569,6 +572,52 @@ def asx_create_xlsx_test():
         "ok": True,
         "message": "Test endpoint works",
         "received": data
+    }), 200
+
+@app.route('/asx_create_xlsx_rename_test', methods=['POST'])
+def asx_create_xlsx_rename_test():
+    data = request.get_json(silent=True) or {}
+    report_id = str(data.get('report_id') or '').strip()
+
+    if not report_id:
+        return jsonify({
+            "ok": False,
+            "error": "report_id is required"
+        }), 400
+
+    wb = Workbook()
+
+    # Перший аркуш створюється автоматично
+    ws1 = wb.active
+    ws1.title = 'Report_ID_Drilling'
+
+    # Другий створюємо вручну
+    ws2 = wb.create_sheet('Report_ID_SurfaceGeochemistry')
+
+    # Формуємо нові назви
+    drilling_name = f'{report_id}_Drilling'
+    surface_name = f'{report_id}_SurfaceGeochemistry'
+
+    # Excel має обмеження 31 символ на назву аркуша
+    if len(drilling_name) > 31:
+        drilling_name = drilling_name[:31]
+
+    if len(surface_name) > 31:
+        surface_name = surface_name[:31]
+
+    # Перейменовуємо
+    wb['Report_ID_Drilling'].title = drilling_name
+    wb['Report_ID_SurfaceGeochemistry'].title = surface_name
+
+    # Зберігати файл поки не треба, але перевіримо, що workbook валідний
+    output = BytesIO()
+    wb.save(output)
+
+    return jsonify({
+        "ok": True,
+        "message": "XLSX rename test works",
+        "report_id": report_id,
+        "sheet_names": wb.sheetnames
     }), 200
 
 if __name__ == "__main__":
