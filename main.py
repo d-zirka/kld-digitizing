@@ -562,7 +562,14 @@ def api_stats():
     }
     return jsonify(data), 200
 
-
+@app.route('/asx_create_xlsx_test', methods=['POST'])
+def asx_create_xlsx_test():
+    data = request.get_json(silent=True) or {}
+    return jsonify({
+        "ok": True,
+        "message": "Test endpoint works",
+        "received": data
+    }), 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
