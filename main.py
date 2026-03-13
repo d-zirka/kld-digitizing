@@ -173,18 +173,32 @@ def index():
       background:var(--bg);
       color:var(--fg);
       font:15px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
-
       display:flex;
       justify-content:center;
-
+      align-items:flex-start;
       padding:20px;
       overflow-x:hidden;
       overflow-y:auto;
     }
+
     .wrap{
-      width:100%;max-width:1100px;margin-top:10px;margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:24px;
+      width:100%;
+      max-width:1100px;
+      margin:10px auto 20px auto;
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      box-shadow:var(--shadow);
+      padding:24px;
     }
-    header{display:flex;gap:12px;align-items:center;margin-bottom:8px}
+    
+    header{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      margin-bottom:8px;
+      flex-wrap:wrap;
+    }
     .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#10b981);display:grid;place-items:center;color:#fff;font-weight:700}
     h1{margin:0;font-size:clamp(22px,3vw,30px)}
     .tag{color:var(--ok);font-weight:600;margin-left:auto}
@@ -193,6 +207,79 @@ def index():
     /* дві колонки */
     .cols{display:grid;grid-template-columns:1fr;gap:16px}
     @media (min-width:980px){ .cols{grid-template-columns:1.3fr 1fr} } /* робимо праву вужчою */
+
+    @media (max-width:768px){
+      body{
+        padding:12px;
+      }
+
+      .wrap{
+        padding:16px;
+        border-radius:12px;
+      }
+
+      h1{
+        font-size:24px;
+        line-height:1.3;
+      }
+
+      .tag{
+        margin-left:0;
+      }
+
+      section{
+        padding:14px;
+      }
+
+      .actions{
+        justify-content:flex-start;
+      }
+
+      .chip,
+      .btn{
+        font-size:12px;
+        padding:8px 10px;
+      }
+
+      footer{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:6px;
+      }
+    }
+
+    @media (max-width:480px){
+      body{
+        padding:10px;
+      }
+
+      .wrap{
+        padding:14px;
+      }
+
+      h1{
+        font-size:21px;
+      }
+
+      h2{
+        font-size:13px;
+      }
+
+      .logo{
+        width:32px;
+        height:32px;
+        border-radius:8px;
+      }
+
+      ul{
+        margin-left:16px;
+      }
+
+      .actions{
+        gap:6px;
+      }
+    }
+    
     section{background:var(--sub);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
     section h3{margin:0 0 6px}
     ul{margin:8px 0 0 18px;padding:0}
@@ -220,6 +307,10 @@ def index():
 
     footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12px}
     footer b{font-weight:700}
+    #projChart{
+      width:100% !important;
+      max-height:320px;
+    }
   </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
@@ -269,10 +360,10 @@ def index():
     </div>
 
         <!-- ===== STATS SECTION ===== -->
-    <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px">
+    <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
       <h2 class="text-xl font-semibold">Статистика проєктів</h2>
       <div class="mt-4">
-        <canvas id="projChart" height="140"></canvas>
+        <canvas id="projChart"></canvas>
       </div>
     </section>
 
