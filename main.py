@@ -236,6 +236,10 @@ def index():
         <ul>
           <li>Auto-unlock ASX PDFs</li>
           <li>Removes encryption and copy/print restrictions</li>
+          <li>Creates report Excel files from template</li>
+          <li>Automatically renames report sheets</li>
+          <li>Restores dropdown lists (Country, UtmZone, HoleType, HoleSize)</li>
+          <li>Writes PDF_ID into Excel reports</li>
         </ul>
       </section>
     </div>
