@@ -176,7 +176,7 @@ def index():
       display:flex;
       justify-content:center;
       align-items:flex-start;
-      padding:20px;
+      padding:20px 20px 56px 20px;
       overflow-x:hidden;
       overflow-y:auto;
     }
@@ -184,7 +184,7 @@ def index():
     .wrap{
       width:100%;
       max-width:1100px;
-      margin:10px auto 20px auto;
+     margin:10px auto 30px auto;
       background:var(--card);
       border:1px solid var(--border);
       border-radius:16px;
