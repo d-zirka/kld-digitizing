@@ -161,9 +161,17 @@ def index():
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
-      margin:0;background:var(--bg);color:var(--fg);
+      margin:0;
+      background:var(--bg);
+      color:var(--fg);
       font:15px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
-      display:flex;align-items:center;justify-content:center;padding:20px;overflow-x:hidden;
+
+      display:flex;
+      justify-content:center;
+
+      padding:20px;
+      overflow-x:hidden;
+      overflow-y:auto;
     }
     .wrap{
       width:100%;max-width:1100px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:24px;
