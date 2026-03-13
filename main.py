@@ -25,6 +25,8 @@ from werkzeug.exceptions import HTTPException
 
 from io import BytesIO
 from openpyxl import Workbook
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.utils import get_column_letter
 
 # -----------------------------------------------------------------------------
 # Flask app & logging
@@ -76,6 +78,28 @@ def safe_sheet_name(name, fallback):
         name = name.replace(ch, '_')
 
     return name[:31]
+
+def find_column_by_header(ws, header_name, header_row=1):
+    for cell in ws[header_row]:
+        if str(cell.value or '').strip().lower() == header_name.strip().lower():
+            return cell.column
+    return None
+
+
+def add_dropdown_to_column(ws, header_name, formula1, header_row=1, start_row=2, end_row=5000):
+    col_idx = find_column_by_header(ws, header_name, header_row)
+    if not col_idx:
+        return False
+
+    col_letter = get_column_letter(col_idx)
+    dv = DataValidation(type="list", formula1=formula1, allow_blank=True)
+    dv.error = "Please select a value from the list."
+    dv.errorTitle = "Invalid value"
+    dv.prompt = f"Choose {header_name} from the dropdown list."
+    dv.promptTitle = header_name
+    ws.add_data_validation(dv)
+    dv.add(f"{col_letter}{start_row}:{col_letter}{end_row}")
+    return True
 
 logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
@@ -707,11 +731,27 @@ def asx_create_xlsx_dropbox_test():
         renamed = []
 
         if 'Report_ID_Drilling' in wb.sheetnames:
-            wb['Report_ID_Drilling'].title = drilling_name
+            ws_drill = wb['Report_ID_Drilling']
+            ws_drill.title = drilling_name
+            ws_drill['U2'] = report_id
+
+            add_dropdown_to_column(ws_drill, 'Country', '=Info!$A$2:$A$100')
+            add_dropdown_to_column(ws_drill, 'UtmZone', '=Info!$B$2:$B$100')
+            add_dropdown_to_column(ws_drill, 'HoleType', '=Info!$C$2:$C$100')
+            add_dropdown_to_column(ws_drill, 'HoleSize', '=Info!$J$2:$J$350')
+
             renamed.append(drilling_name)
 
         if 'Report_ID_SurfaceGeochemistry' in wb.sheetnames:
-            wb['Report_ID_SurfaceGeochemistry'].title = surface_name
+            ws_surface = wb['Report_ID_SurfaceGeochemistry']
+            ws_surface.title = surface_name
+            ws_surface['U2'] = report_id
+
+            add_dropdown_to_column(ws_surface, 'Country', '=Info!$A$2:$A$100')
+            add_dropdown_to_column(ws_surface, 'UtmZone', '=Info!$B$2:$B$100')
+            add_dropdown_to_column(ws_surface, 'HoleType', '=Info!$C$2:$C$100')
+            add_dropdown_to_column(ws_surface, 'HoleSize', '=Info!$J$2:$J$350')
+
             renamed.append(surface_name)
 
         # 5. Зберігаємо в пам'ять
