@@ -101,6 +101,14 @@ def add_dropdown_to_column(ws, header_name, formula1, header_row=1, start_row=2,
     dv.add(f"{col_letter}{start_row}:{col_letter}{end_row}")
     return True
 
+def write_value_by_header(ws, header_name, value, header_row=1, target_row=2):
+    col_idx = find_column_by_header(ws, header_name, header_row)
+    if not col_idx:
+        return False
+
+    ws.cell(row=target_row, column=col_idx).value = value
+    return True
+
 logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
@@ -174,7 +182,7 @@ def index():
       overflow-y:auto;
     }
     .wrap{
-      width:100%;max-width:1100px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:24px;
+      width:100%;max-width:1100px;margin-top:10px;margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:24px;
     }
     header{display:flex;gap:12px;align-items:center;margin-bottom:8px}
     .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#10b981);display:grid;place-items:center;color:#fff;font-weight:700}
@@ -745,7 +753,7 @@ def asx_create_xlsx_dropbox_test():
         if 'Report_ID_Drilling' in wb.sheetnames:
             ws_drill = wb['Report_ID_Drilling']
             ws_drill.title = drilling_name
-            ws_drill['U2'] = report_id
+            write_value_by_header(ws_drill, 'PDF_ID', report_id)
 
             add_dropdown_to_column(ws_drill, 'Country', '=Info!$A$2:$A$100')
             add_dropdown_to_column(ws_drill, 'UtmZone', '=Info!$B$2:$B$100')
@@ -757,7 +765,7 @@ def asx_create_xlsx_dropbox_test():
         if 'Report_ID_SurfaceGeochemistry' in wb.sheetnames:
             ws_surface = wb['Report_ID_SurfaceGeochemistry']
             ws_surface.title = surface_name
-            ws_surface['U2'] = report_id
+            write_value_by_header(ws_surface, 'PDF_ID', report_id)
 
             add_dropdown_to_column(ws_surface, 'Country', '=Info!$A$2:$A$100')
             add_dropdown_to_column(ws_surface, 'UtmZone', '=Info!$B$2:$B$100')
