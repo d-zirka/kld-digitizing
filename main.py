@@ -852,8 +852,6 @@ def asx_create_xlsx_dropbox_test():
             add_dropdown_to_column(ws_drill, 'HoleSize', '=Info!$J$2:$J$350')
             add_dropdown_to_column(ws_drill, 'SampleType', '=Info!$H$2:$H$100')
             add_dropdown_to_column(ws_drill, 'Sample_Medium', '=Info!$G$2:$G$100')
-            add_dropdown_to_column(ws_surface, 'SampleType', '=Info!$H$2:$H$100')
-            add_dropdown_to_column(ws_surface, 'Sample_Medium', '=Info!$G$2:$G$100')
 
             renamed.append(drilling_name)
 
@@ -866,6 +864,8 @@ def asx_create_xlsx_dropbox_test():
             add_dropdown_to_column(ws_surface, 'UtmZone', '=Info!$B$2:$B$100')
             add_dropdown_to_column(ws_surface, 'HoleType', '=Info!$C$2:$C$100')
             add_dropdown_to_column(ws_surface, 'HoleSize', '=Info!$J$2:$J$350')
+            add_dropdown_to_column(ws_surface, 'SampleType', '=Info!$H$2:$H$100')
+           add_dropdown_to_column(ws_surface, 'Sample_Medium', '=Info!$G$2:$G$100')
 
             renamed.append(surface_name)
 
