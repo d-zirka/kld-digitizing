@@ -329,7 +329,7 @@ def index():
   <div class="wrap">
     <header>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running</h1>
+      <h1>Kenorland Digitizing Server is running 🚀</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -440,7 +440,7 @@ def index():
           labels,
           datasets: [
             { label: 'PDF downloaded', data: values },
-            { label: 'Templates created (1 report = 1)', data: templateValues }
+            { label: 'Templates created', data: templateValues }
           ]
         },
         options: {
