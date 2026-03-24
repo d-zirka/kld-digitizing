@@ -185,7 +185,7 @@ def index():
     .wrap{
       width:100%;
       max-width:1200px;
-      margin:0 auto;
+      margin:clamp(10px, 2vw, 24px) auto;
       background:var(--card);
       border:1px solid var(--border);
       border-radius:16px;
@@ -207,7 +207,7 @@ def index():
 
     /* Ð´Ð²Ñ– ÐºÐ¾Ð»Ð¾Ð½ÐºÐ¸ */
     .cols{display:grid;grid-template-columns:1fr;gap:16px}
-    @media (min-width:980px){ .cols{grid-template-columns:1.3fr 1fr} } /* Ñ€Ð¾Ð±Ð¸Ð¼Ð¾ Ð¿Ñ€Ð°Ð²Ñƒ Ð²ÑƒÐ¶Ñ‡Ð¾ÑŽ */
+    @media (min-width:980px){ .cols{grid-template-columns:1fr 1fr} } /* balanced columns */
 
     @media (max-width:768px){
       body{
@@ -233,7 +233,7 @@ def index():
       }
 
       .actions{
-        justify-content:flex-start;
+        justify-content:center;
       }
 
       .chip,
@@ -243,9 +243,11 @@ def index():
       }
 
       footer{
-        flex-direction:column;
-        align-items:flex-start;
-        gap:6px;
+        flex-direction:row;
+        align-items:center;
+        justify-content:space-between;
+        flex-wrap:wrap;
+        gap:8px;
       }
     }
 
@@ -286,7 +288,7 @@ def index():
     ul{margin:8px 0 0 18px;padding:0}
 
     /* Ñ‡Ð¸Ð¿Ð¸ Ð¹ ÐºÐ½Ð¾Ð¿ÐºÐ¸ Ð·Ð½Ð¸Ð·Ñƒ */
-    .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;margin-top:16px}
+    .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
     .chip{
       display:inline-block;background:#f3f4f6;border:1px solid var(--border);color:#374151;
       font-size:12.5px;line-height:1;padding:7px 12px;border-radius:999px;font-weight:500;
@@ -320,8 +322,13 @@ def index():
       display:block;
     }
     .stats-meta{margin-top:10px;color:#374151;font-size:13px}
-    .stats-totals{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+    .stats-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .stats-totals{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
     .stats-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-size:12px}
+    @media (max-width:768px){
+      .stats-head{flex-direction:column;align-items:flex-start}
+      .stats-totals{justify-content:flex-start}
+    }
   </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
@@ -329,7 +336,7 @@ def index():
   <div class="wrap">
     <header>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running 🚀</h1>
+      <h1>Kenorland Digitizing Server is running</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -372,17 +379,19 @@ def index():
 
         <!-- ===== STATS SECTION ===== -->
     <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
-      <h2 class="text-xl font-semibold">Project Statistics</h2>
+      <div class="stats-head">
+        <h2 class="text-xl font-semibold" style="margin:0;">Project Statistics</h2>
+        <div id="statsTotals" class="stats-totals"></div>
+      </div>
       <div class="mt-4">
         <div class="chart-wrap"><canvas id="projChart"></canvas></div>
       </div>
       <div id="statsMeta" class="stats-meta">Tracking start: n/a</div>
-      <div id="statsTotals" class="stats-totals"></div>
     </section>
 
     <footer>
-      <div>Powered by <b>Flask</b> | <b>Render</b></div>
-      <div>Created by <b>Zirka</b> | <b>chatGPT</b></div>
+      <div>Powered by <b>Flask</b> &middot; <b>Render</b></div>
+      <div>Created by <b>Zirka</b> &middot; <b>chatGPT</b></div>
     </footer>
   </div>
 
@@ -439,8 +448,20 @@ def index():
         data: {
           labels,
           datasets: [
-            { label: 'PDF downloaded', data: values },
-            { label: 'Templates created', data: templateValues }
+            {
+              label: 'PDF downloaded',
+              data: values,
+              backgroundColor: '#FFD700',
+              borderColor: '#FFD700',
+              borderWidth: 1
+            },
+            {
+              label: 'Templates created (1 report = 1)',
+              data: templateValues,
+              backgroundColor: '#0057B7',
+              borderColor: '#0057B7',
+              borderWidth: 1
+            }
           ]
         },
         options: {
@@ -451,8 +472,25 @@ def index():
         }
       });
       const meta = document.getElementById('statsMeta');
+      const fmt = (iso) => {
+        if (!iso) return 'n/a';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return iso;
+        return d.toLocaleString('en-CA', {
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZoneName: 'short'
+        });
+      };
       if (meta) {
-        meta.textContent = 'Tracking start: ' + (data.tracking_started_at || 'n/a') + ' | Updated: ' + (data.updated_at || 'n/a');
+        meta.innerHTML =
+          '<b>Tracking started:</b> ' + fmt(data.tracking_started_at) +
+          ' &nbsp;&nbsp;|&nbsp;&nbsp; ' +
+          '<b>Last updated:</b> ' + fmt(data.updated_at);
       }
       const totals = document.getElementById('statsTotals');
       if (totals && data.totals) {
