@@ -22,6 +22,7 @@ import pikepdf
 from flask import Flask, request, jsonify, url_for, send_from_directory, render_template_string
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
+from stats_runtime_v2 import StatsStore, PROVINCES
 
 from io import BytesIO
 from openpyxl import Workbook
@@ -113,7 +114,7 @@ logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
 # -----------------------------------------------------------------------------
-# HTTP session з таймаутами та ретраями
+# HTTP session Ð· Ñ‚Ð°Ð¹Ð¼Ð°ÑƒÑ‚Ð°Ð¼Ð¸ Ñ‚Ð° Ñ€ÐµÑ‚Ñ€Ð°ÑÐ¼Ð¸
 # -----------------------------------------------------------------------------
 DEFAULT_TIMEOUT = 30
 
@@ -133,7 +134,7 @@ def _requests_session() -> requests.Session:
 session = _requests_session()
 
 # -----------------------------------------------------------------------------
-# Службові маршрути
+# Ð¡Ð»ÑƒÐ¶Ð±Ð¾Ð²Ñ– Ð¼Ð°Ñ€ÑˆÑ€ÑƒÑ‚Ð¸
 # -----------------------------------------------------------------------------
 @app.route("/healthz")
 def healthz():
@@ -148,7 +149,7 @@ def favicon():
     return "", 204
 
 # -----------------------------------------------------------------------------
-# Головна сторінка
+# Ð“Ð¾Ð»Ð¾Ð²Ð½Ð° ÑÑ‚Ð¾Ñ€Ñ–Ð½ÐºÐ°
 # -----------------------------------------------------------------------------
 
 @app.route("/")
@@ -204,9 +205,9 @@ def index():
     .tag{color:var(--ok);font-weight:600;margin-left:auto}
     h2{margin:10px 0 12px;font-size:14px;letter-spacing:.12em;color:var(--muted)}
 
-    /* дві колонки */
+    /* Ð´Ð²Ñ– ÐºÐ¾Ð»Ð¾Ð½ÐºÐ¸ */
     .cols{display:grid;grid-template-columns:1fr;gap:16px}
-    @media (min-width:980px){ .cols{grid-template-columns:1.3fr 1fr} } /* робимо праву вужчою */
+    @media (min-width:980px){ .cols{grid-template-columns:1.3fr 1fr} } /* Ñ€Ð¾Ð±Ð¸Ð¼Ð¾ Ð¿Ñ€Ð°Ð²Ñƒ Ð²ÑƒÐ¶Ñ‡Ð¾ÑŽ */
 
     @media (max-width:768px){
       body{
@@ -284,12 +285,12 @@ def index():
     section h3{margin:0 0 6px}
     ul{margin:8px 0 0 18px;padding:0}
 
-    /* чипи й кнопки знизу */
+    /* Ñ‡Ð¸Ð¿Ð¸ Ð¹ ÐºÐ½Ð¾Ð¿ÐºÐ¸ Ð·Ð½Ð¸Ð·Ñƒ */
     .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
     .chip{
       display:inline-block;background:#f3f4f6;border:1px solid var(--border);color:#374151;
       font-size:12.5px;line-height:1;padding:7px 12px;border-radius:999px;font-weight:500;
-      user-select:none;pointer-events:none; /* не клікається */
+      user-select:none;pointer-events:none; /* Ð½Ðµ ÐºÐ»Ñ–ÐºÐ°Ñ”Ñ‚ÑŒÑÑ */
     }
     .btn{
       border:1px solid var(--border);background:#fff;color:#fg;
@@ -298,7 +299,7 @@ def index():
     .btn:hover{border-color:var(--accent)}
     .btn:active{transform:translateY(.5px)}
 
-    /* модалка */
+    /* Ð¼Ð¾Ð´Ð°Ð»ÐºÐ° */
     .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
     .modal{width:min(520px,100%);background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px}
     .modal h4{margin:0 0 8px;font-size:16px}
@@ -311,6 +312,9 @@ def index():
       width:100% !important;
       max-height:320px;
     }
+    .stats-meta{margin-top:10px;color:#374151;font-size:13px}
+    .stats-totals{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+    .stats-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-size:12px}
   </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
@@ -318,7 +322,7 @@ def index():
   <div class="wrap">
     <header>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running 🚀</h1>
+      <h1>Kenorland Digitizing Server is running ðŸš€</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -361,15 +365,17 @@ def index():
 
         <!-- ===== STATS SECTION ===== -->
     <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
-      <h2 class="text-xl font-semibold">Статистика проєктів</h2>
+      <h2 class="text-xl font-semibold">Ð¡Ñ‚Ð°Ñ‚Ð¸ÑÑ‚Ð¸ÐºÐ° Ð¿Ñ€Ð¾Ñ”ÐºÑ‚Ñ–Ð²</h2>
       <div class="mt-4">
         <canvas id="projChart"></canvas>
       </div>
+      <div id="statsMeta" class="stats-meta">Tracking start: n/a</div>
+      <div id="statsTotals" class="stats-totals"></div>
     </section>
 
     <footer>
-      <div>Powered by <b>Flask</b> · <b>Render</b></div>
-      <div>Created by <b>Zirka</b> · <b>chatGPT</b></div>
+      <div>Powered by <b>Flask</b> Â· <b>Render</b></div>
+      <div>Created by <b>Zirka</b> Â· <b>chatGPT</b></div>
     </footer>
   </div>
 
@@ -377,7 +383,7 @@ def index():
   <div id="backdrop" class="backdrop" role="dialog" aria-modal="true" aria-labelledby="healthTitle">
     <div class="modal">
       <h4 id="healthTitle">Service health</h4>
-      <div id="healthBody">Checking…</div>
+      <div id="healthBody">Checkingâ€¦</div>
       <div style="margin-top:12px;display:flex;justify-content:flex-end">
         <button class="btn" onclick="closeModal()">Close</button>
       </div>
@@ -393,7 +399,7 @@ def index():
 
     async function checkHealth(){
       openModal();
-      bodyEl.innerHTML = 'Checking…';
+      bodyEl.innerHTML = 'Checkingâ€¦';
       try{
         const res = await fetch('/healthz', { cache:'no-store' });
         const txt = (await res.text() || '').trim();
@@ -416,6 +422,7 @@ def index():
       const data = await res.json();
       const labels = data.labels || [];
       const values = data.values || [];
+      const templateValues = data.templates_values || [];
 
       const ctx = document.getElementById('projChart');
       if (!ctx) return;
@@ -424,10 +431,10 @@ def index():
         type: 'bar',
         data: {
           labels,
-          datasets: [{
-            label: 'К-сть завантажених PDF / дій',
-            data: values
-          }]
+          datasets: [
+            { label: 'PDF downloaded', data: values },
+            { label: 'Templates copied', data: templateValues }
+          ]
         },
         options: {
           responsive: true,
@@ -435,12 +442,24 @@ def index():
           scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
         }
       });
+      const meta = document.getElementById('statsMeta');
+      if (meta) {
+        meta.textContent = 'Tracking start: ' + (data.tracking_started_at || 'n/a') + ' | Updated: ' + (data.updated_at || 'n/a');
+      }
+      const totals = document.getElementById('statsTotals');
+      if (totals && data.totals) {
+        totals.innerHTML =
+          '<span class="stats-box">PDF total: <b>' + (data.totals.reports_downloaded || 0) + '</b></span>' +
+          '<span class="stats-box">Templates total: <b>' + (data.totals.templates_copied || 0) + '</b></span>' +
+          '<span class="stats-box">Requests: <b>' + (data.totals.requests || 0) + '</b></span>' +
+          '<span class="stats-box">Failed: <b>' + (data.totals.failed_requests || 0) + '</b></span>';
+      }
     } catch (e) {
       console.error('Chart init error:', e);
     }
   }
 
-  // Запуск при завантаженні сторінки
+  // Ð—Ð°Ð¿ÑƒÑÐº Ð¿Ñ€Ð¸ Ð·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ– ÑÑ‚Ð¾Ñ€Ñ–Ð½ÐºÐ¸
   document.addEventListener('DOMContentLoaded', initChart);
     
   </script>
@@ -468,6 +487,41 @@ def get_dropbox_access_token() -> str:
     )
     resp.raise_for_status()
     return resp.json()["access_token"]
+
+# -----------------------------------------------------------------------------
+# Stats storage (JSON in the same folder as this script)
+# -----------------------------------------------------------------------------
+STATS_BACKEND = "dropbox"
+STATS_DROPBOX_PATH = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/project_stats.json"
+STATS_LOCAL_PATH = os.path.join(app.root_path, "project_stats.json")
+_stats_store: StatsStore | None = None
+
+
+def get_stats_store() -> StatsStore:
+    global _stats_store
+    if _stats_store is None:
+        _stats_store = StatsStore(
+            backend=STATS_BACKEND,
+            dropbox_path=STATS_DROPBOX_PATH,
+            local_path=STATS_LOCAL_PATH,
+            logger=app.logger,
+            token_provider=get_dropbox_access_token,
+        )
+    return _stats_store
+
+
+def track_download_stats(province: str, downloaded_pdfs: int, templates_copied: int, success: bool) -> None:
+    if province not in PROVINCES:
+        return
+    try:
+        get_stats_store().apply_download_event(
+            province=province,
+            downloaded_pdfs=downloaded_pdfs,
+            templates_copied=templates_copied,
+            success=success,
+        )
+    except Exception as e:
+        app.logger.warning(f"Stats update failed: {e}")
 
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
     try:
@@ -504,7 +558,8 @@ def _try_get(url: str) -> Optional[bytes]:
 
 def download_ar_generic(ar_number: str, province: str, project: str,
                         list_page_url: str | None = None,
-                        base_url: str | None = None) -> int:
+                        base_url: str | None = None,
+                        stats_out: dict | None = None) -> int:
     token = get_dropbox_access_token()
     dbx = dropbox.Dropbox(token)
     base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
@@ -512,21 +567,27 @@ def download_ar_generic(ar_number: str, province: str, project: str,
     srcdata = f"{base}/Source Data"
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
+    template_copies = 0
     try:
         dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
                           f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
+        template_copies += 1
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Instructions copy failed: {e}")
     try:
         dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
                           f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
+        template_copies += 1
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Geochemistry copy failed: {e}")
     try:
         dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
                           f"{base}/{ar_number}_DDH.gdb", autorename=False)
+        template_copies += 1
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"DDH copy failed: {e}")
+    if isinstance(stats_out, dict):
+        stats_out["templates_copied"] = template_copies
     if not list_page_url:
         return 0
     resp = session.get(list_page_url, timeout=DEFAULT_TIMEOUT)
@@ -568,9 +629,9 @@ def download_ar_generic(ar_number: str, province: str, project: str,
 
 
 # -------------------- ADD: Manitoba direct-download logic --------------------
-def download_ar_manitoba(ar_number: str, province: str, project: str) -> int:
+def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out: dict | None = None) -> int:
     """
-    Manitoba: пряме завантаження одного PDF:
+    Manitoba: Ð¿Ñ€ÑÐ¼Ðµ Ð·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ Ð¾Ð´Ð½Ð¾Ð³Ð¾ PDF:
     https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf
     """
     token = get_dropbox_access_token()
@@ -580,26 +641,32 @@ def download_ar_manitoba(ar_number: str, province: str, project: str) -> int:
     instr = f"{base}/Instructions"
     srcdata = f"{base}/Source Data"
 
-    # Створення тек та копіювання шаблонів — ідентично іншим провінціям
+    # Ð¡Ñ‚Ð²Ð¾Ñ€ÐµÐ½Ð½Ñ Ñ‚ÐµÐº Ñ‚Ð° ÐºÐ¾Ð¿Ñ–ÑŽÐ²Ð°Ð½Ð½Ñ ÑˆÐ°Ð±Ð»Ð¾Ð½Ñ–Ð² â€” Ñ–Ð´ÐµÐ½Ñ‚Ð¸Ñ‡Ð½Ð¾ Ñ–Ð½ÑˆÐ¸Ð¼ Ð¿Ñ€Ð¾Ð²Ñ–Ð½Ñ†Ñ–ÑÐ¼
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
+    template_copies = 0
     try:
         dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
                           f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
+        template_copies += 1
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Instructions copy failed: {e}")
     try:
         dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
                           f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
+        template_copies += 1
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"Geochemistry copy failed: {e}")
     try:
         dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
                           f"{base}/{ar_number}_DDH.gdb", autorename=False)
+        template_copies += 1
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"DDH copy failed: {e}")
+    if isinstance(stats_out, dict):
+        stats_out["templates_copied"] = template_copies
 
-    # Прямий PDF без суфіксів
+    # ÐŸÑ€ÑÐ¼Ð¸Ð¹ PDF Ð±ÐµÐ· ÑÑƒÑ„Ñ–ÐºÑÑ–Ð²
     url = f"https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf"
     content = _try_get(url)
     if not content:
@@ -625,20 +692,20 @@ def _check_bearer(req) -> None:
 
 def _unlock_pdf_bytes(data: bytes) -> bytes:
     """
-    Знімає owner-обмеження та прибирає шифрування.
-    Підтримує кейс із порожнім user-password ("").
-    Якщо справді потрібен пароль на відкриття (непорожній) або сталася помилка — повертає оригінал.
+    Ð—Ð½Ñ–Ð¼Ð°Ñ” owner-Ð¾Ð±Ð¼ÐµÐ¶ÐµÐ½Ð½Ñ Ñ‚Ð° Ð¿Ñ€Ð¸Ð±Ð¸Ñ€Ð°Ñ” ÑˆÐ¸Ñ„Ñ€ÑƒÐ²Ð°Ð½Ð½Ñ.
+    ÐŸÑ–Ð´Ñ‚Ñ€Ð¸Ð¼ÑƒÑ” ÐºÐµÐ¹Ñ Ñ–Ð· Ð¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¼ user-password ("").
+    Ð¯ÐºÑ‰Ð¾ ÑÐ¿Ñ€Ð°Ð²Ð´Ñ– Ð¿Ð¾Ñ‚Ñ€Ñ–Ð±ÐµÐ½ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ Ð½Ð° Ð²Ñ–Ð´ÐºÑ€Ð¸Ñ‚Ñ‚Ñ (Ð½ÐµÐ¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¹) Ð°Ð±Ð¾ ÑÑ‚Ð°Ð»Ð°ÑÑ Ð¿Ð¾Ð¼Ð¸Ð»ÐºÐ° â€” Ð¿Ð¾Ð²ÐµÑ€Ñ‚Ð°Ñ” Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð».
     """
     import io
     import pikepdf
 
-    # Спробувати без пароля, потім з порожнім паролем
+    # Ð¡Ð¿Ñ€Ð¾Ð±ÑƒÐ²Ð°Ñ‚Ð¸ Ð±ÐµÐ· Ð¿Ð°Ñ€Ð¾Ð»Ñ, Ð¿Ð¾Ñ‚Ñ–Ð¼ Ð· Ð¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¼ Ð¿Ð°Ñ€Ð¾Ð»ÐµÐ¼
     for pw in (None, ""):
         try:
             pdf = pikepdf.open(io.BytesIO(data), password=pw)
             try:
                 out = io.BytesIO()
-                # ВАЖЛИВО: зберігаємо БЕЗ encryption= — файл стає нешифрований і без "Enter password"
+                # Ð’ÐÐ–Ð›Ð˜Ð’Ðž: Ð·Ð±ÐµÑ€Ñ–Ð³Ð°Ñ”Ð¼Ð¾ Ð‘Ð•Ð— encryption= â€” Ñ„Ð°Ð¹Ð» ÑÑ‚Ð°Ñ” Ð½ÐµÑˆÐ¸Ñ„Ñ€Ð¾Ð²Ð°Ð½Ð¸Ð¹ Ñ– Ð±ÐµÐ· "Enter password"
                 pdf.save(out)
                 pdf.close()
                 return out.getvalue()
@@ -648,10 +715,10 @@ def _unlock_pdf_bytes(data: bytes) -> bytes:
                 except Exception:
                     pass
         except (pikepdf.PasswordError, getattr(pikepdf, "_qpdf", type("", (), {})) .__dict__.get("PasswordError", Exception)):
-            # потрібен справжній user-password (непорожній) — пропускаємо цикл/повернемо оригінал
+            # Ð¿Ð¾Ñ‚Ñ€Ñ–Ð±ÐµÐ½ ÑÐ¿Ñ€Ð°Ð²Ð¶Ð½Ñ–Ð¹ user-password (Ð½ÐµÐ¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¹) â€” Ð¿Ñ€Ð¾Ð¿ÑƒÑÐºÐ°Ñ”Ð¼Ð¾ Ñ†Ð¸ÐºÐ»/Ð¿Ð¾Ð²ÐµÑ€Ð½ÐµÐ¼Ð¾ Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð»
             continue
         except Exception:
-            # будь-яка інша помилка — переходимо до повернення оригіналу
+            # Ð±ÑƒÐ´ÑŒ-ÑÐºÐ° Ñ–Ð½ÑˆÐ° Ð¿Ð¾Ð¼Ð¸Ð»ÐºÐ° â€” Ð¿ÐµÑ€ÐµÑ…Ð¾Ð´Ð¸Ð¼Ð¾ Ð´Ð¾ Ð¿Ð¾Ð²ÐµÑ€Ð½ÐµÐ½Ð½Ñ Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð»Ñƒ
             break
 
     return data
@@ -699,28 +766,35 @@ def download_gm():
     proj = str(data.get("project", "")).strip()
     if not all([num, prov, proj]):
         return jsonify(error="Missing parameters"), 400
+    cnt = 0
+    stats_out: dict = {}
+    tpl = 0
     try:
         if prov == "Quebec" and num.upper().startswith("GM"):
             url = f"https://gq.mines.gouv.qc.ca/documents/EXAMINE/{num}/"
-            cnt = download_ar_generic(num, prov, proj, url)
+            cnt = download_ar_generic(num, prov, proj, url, stats_out=stats_out)
         elif prov == "Ontario":
             url = f"https://www.geologyontario.mndm.gov.on.ca/mndmfiles/afri/data/records/{num}.html"
             blob = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
-            cnt = download_ar_generic(num, prov, proj, url, blob)
+            cnt = download_ar_generic(num, prov, proj, url, blob, stats_out=stats_out)
         elif prov == "New Brunswick":
-            cnt = download_ar_generic(num, prov, proj)
+            cnt = download_ar_generic(num, prov, proj, stats_out=stats_out)
         elif prov == "Nunavut":
-            cnt = download_ar_generic(num, prov, proj)
+            cnt = download_ar_generic(num, prov, proj, stats_out=stats_out)
         elif prov == "Manitoba":
-            cnt = download_ar_manitoba(num, prov, proj)
+            cnt = download_ar_manitoba(num, prov, proj, stats_out=stats_out)
         else:
             return jsonify(error="Invalid province or AR#"), 400
+        tpl = int(stats_out.get("templates_copied", 0) or 0)
+        track_download_stats(prov, cnt, tpl, True)
         msg = f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded."
-        return jsonify(message=msg), 200
+        return jsonify(message=msg, downloaded_pdfs=cnt, templates_copied=tpl), 200
     except requests.HTTPError as he:
+        track_download_stats(prov, cnt, tpl, False)
         app.logger.error(f"HTTP error: {he}", exc_info=True)
         return jsonify(error=str(he)), 502
     except Exception as e:
+        track_download_stats(prov, cnt, tpl, False)
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
@@ -740,15 +814,14 @@ def all_errors(e):
 
 @app.get("/api/stats")
 def api_stats():
-    """
-    Поки що повертаємо прості тестові дані.
-    Потім підмінимо на реальні (напр., скільки PDF завантажено по провінціях).
-    """
-    data = {
-        "labels": ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut"],
-        "values": [12, 9, 4, 2, 0]  # тимчасові числа
-    }
-    return jsonify(data), 200
+    try:
+        state = get_stats_store().load()
+        payload = StatsStore.to_api_payload(state)
+        return jsonify(payload), 200
+    except Exception as e:
+        app.logger.warning(f"Stats read failed: {e}")
+        fallback = StatsStore.to_api_payload(None)
+        return jsonify(fallback), 200
 
 @app.route('/asx_create_xlsx_test', methods=['POST'])
 def asx_create_xlsx_test():
@@ -772,29 +845,29 @@ def asx_create_xlsx_rename_test():
 
     wb = Workbook()
 
-    # Перший аркуш створюється автоматично
+    # ÐŸÐµÑ€ÑˆÐ¸Ð¹ Ð°Ñ€ÐºÑƒÑˆ ÑÑ‚Ð²Ð¾Ñ€ÑŽÑ”Ñ‚ÑŒÑÑ Ð°Ð²Ñ‚Ð¾Ð¼Ð°Ñ‚Ð¸Ñ‡Ð½Ð¾
     ws1 = wb.active
     ws1.title = 'Report_ID_Drilling'
 
-    # Другий створюємо вручну
+    # Ð”Ñ€ÑƒÐ³Ð¸Ð¹ ÑÑ‚Ð²Ð¾Ñ€ÑŽÑ”Ð¼Ð¾ Ð²Ñ€ÑƒÑ‡Ð½Ñƒ
     ws2 = wb.create_sheet('Report_ID_SurfaceGeochemistry')
 
-    # Формуємо нові назви
+    # Ð¤Ð¾Ñ€Ð¼ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ñ– Ð½Ð°Ð·Ð²Ð¸
     drilling_name = f'{report_id}_Drilling'
     surface_name = f'{report_id}_SurfaceGeochemistry'
 
-    # Excel має обмеження 31 символ на назву аркуша
+    # Excel Ð¼Ð°Ñ” Ð¾Ð±Ð¼ÐµÐ¶ÐµÐ½Ð½Ñ 31 ÑÐ¸Ð¼Ð²Ð¾Ð» Ð½Ð° Ð½Ð°Ð·Ð²Ñƒ Ð°Ñ€ÐºÑƒÑˆÐ°
     if len(drilling_name) > 31:
         drilling_name = drilling_name[:31]
 
     if len(surface_name) > 31:
         surface_name = surface_name[:31]
 
-    # Перейменовуємо
+    # ÐŸÐµÑ€ÐµÐ¹Ð¼ÐµÐ½Ð¾Ð²ÑƒÑ”Ð¼Ð¾
     wb['Report_ID_Drilling'].title = drilling_name
     wb['Report_ID_SurfaceGeochemistry'].title = surface_name
 
-    # Зберігати файл поки не треба, але перевіримо, що workbook валідний
+    # Ð—Ð±ÐµÑ€Ñ–Ð³Ð°Ñ‚Ð¸ Ñ„Ð°Ð¹Ð» Ð¿Ð¾ÐºÐ¸ Ð½Ðµ Ñ‚Ñ€ÐµÐ±Ð°, Ð°Ð»Ðµ Ð¿ÐµÑ€ÐµÐ²Ñ–Ñ€Ð¸Ð¼Ð¾, Ñ‰Ð¾ workbook Ð²Ð°Ð»Ñ–Ð´Ð½Ð¸Ð¹
     output = BytesIO()
     wb.save(output)
 
@@ -828,17 +901,17 @@ def asx_create_xlsx_dropbox_test():
         return jsonify({"ok": False, "error": f"Dropbox auth failed: {str(e)}"}), 500
 
     try:
-        # 1. Завантажуємо шаблон з Dropbox
+        # 1. Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÑƒÑ”Ð¼Ð¾ ÑˆÐ°Ð±Ð»Ð¾Ð½ Ð· Dropbox
         file_bytes = dropbox_download_file(template_path, token)
 
-        # 2. Відкриваємо workbook з пам'яті
+        # 2. Ð’Ñ–Ð´ÐºÑ€Ð¸Ð²Ð°Ñ”Ð¼Ð¾ workbook Ð· Ð¿Ð°Ð¼'ÑÑ‚Ñ–
         wb = load_workbook(BytesIO(file_bytes))
 
-        # 3. Формуємо нові назви аркушів
+        # 3. Ð¤Ð¾Ñ€Ð¼ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ñ– Ð½Ð°Ð·Ð²Ð¸ Ð°Ñ€ÐºÑƒÑˆÑ–Ð²
         drilling_name = safe_sheet_name(f'{report_id}_Drilling', 'Drilling')
         surface_name = safe_sheet_name(f'{report_id}_SurfaceGeochemistry', 'SurfaceGeochemistry')
 
-        # 4. Перейменовуємо, якщо аркуші існують
+        # 4. ÐŸÐµÑ€ÐµÐ¹Ð¼ÐµÐ½Ð¾Ð²ÑƒÑ”Ð¼Ð¾, ÑÐºÑ‰Ð¾ Ð°Ñ€ÐºÑƒÑˆÑ– Ñ–ÑÐ½ÑƒÑŽÑ‚ÑŒ
         renamed = []
 
         if 'Report_ID_Drilling' in wb.sheetnames:
@@ -869,12 +942,12 @@ def asx_create_xlsx_dropbox_test():
 
             renamed.append(surface_name)
 
-        # 5. Зберігаємо в пам'ять
+        # 5. Ð—Ð±ÐµÑ€Ñ–Ð³Ð°Ñ”Ð¼Ð¾ Ð² Ð¿Ð°Ð¼'ÑÑ‚ÑŒ
         output = BytesIO()
         wb.save(output)
         output.seek(0)
 
-        # 6. Завантажуємо новий файл назад у Dropbox
+        # 6. Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ð¸Ð¹ Ñ„Ð°Ð¹Ð» Ð½Ð°Ð·Ð°Ð´ Ñƒ Dropbox
         upload_result = dropbox_upload_file(output_path, output.getvalue(), token)
 
         return jsonify({
@@ -897,3 +970,4 @@ def asx_create_xlsx_dropbox_test():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
+
