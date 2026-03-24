@@ -29,6 +29,16 @@ def _province_template() -> Dict[str, Any]:
     }
 
 
+def _asx_totals_template() -> Dict[str, Any]:
+    return {
+        "unlock_requests": 0,
+        "unlock_uploaded": 0,
+        "xlsx_requests": 0,
+        "xlsx_created": 0,
+        "failed_requests": 0,
+    }
+
+
 def default_state() -> Dict[str, Any]:
     now = utc_now_iso()
     return {
@@ -41,8 +51,10 @@ def default_state() -> Dict[str, Any]:
             "requests": 0,
             "failed_requests": 0,
         },
+        "asx_totals": _asx_totals_template(),
         "by_province": {p: _province_template() for p in PROVINCES},
         "events": [],
+        "asx_events": [],
     }
 
 
@@ -61,6 +73,12 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             state["totals"][k] = int(raw_totals.get(k, 0) or 0)
         except Exception:
             state["totals"][k] = 0
+    raw_asx_totals = raw.get("asx_totals") if isinstance(raw.get("asx_totals"), dict) else {}
+    for k in ("unlock_requests", "unlock_uploaded", "xlsx_requests", "xlsx_created", "failed_requests"):
+        try:
+            state["asx_totals"][k] = int(raw_asx_totals.get(k, 0) or 0)
+        except Exception:
+            state["asx_totals"][k] = 0
 
     raw_by_province = raw.get("by_province") if isinstance(raw.get("by_province"), dict) else {}
     for p in PROVINCES:
@@ -93,6 +111,24 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             }
         )
     state["events"] = events
+    raw_asx_events = raw.get("asx_events") if isinstance(raw.get("asx_events"), list) else []
+    asx_events: list[Dict[str, Any]] = []
+    for item in raw_asx_events[-5000:]:
+        if not isinstance(item, dict):
+            continue
+        ts = str(item.get("ts") or "").strip()
+        action = str(item.get("action") or "").strip().lower()
+        if not ts or action not in {"unlock_upload", "xlsx_create"}:
+            continue
+        asx_events.append(
+            {
+                "ts": ts,
+                "action": action,
+                "count": max(0, int(item.get("count", 0) or 0)),
+                "success": bool(item.get("success", False)),
+            }
+        )
+    state["asx_events"] = asx_events
     return state
 
 
@@ -235,6 +271,53 @@ class StatsStore:
             self._write_local(out)
             return out
 
+    def apply_asx_event(self, action: str, count: int = 1, success: bool = True) -> Dict[str, Any]:
+        action = str(action or "").strip().lower()
+        if action not in {"unlock_upload", "xlsx_create"}:
+            raise ValueError("Invalid ASX action")
+        count = max(0, int(count or 0))
+
+        def mutate(state: Dict[str, Any]) -> Dict[str, Any]:
+            now = utc_now_iso()
+            t = state.setdefault("asx_totals", _asx_totals_template())
+            if action == "unlock_upload":
+                t["unlock_requests"] += 1
+                if success:
+                    t["unlock_uploaded"] += count
+            if action == "xlsx_create":
+                t["xlsx_requests"] += 1
+                if success:
+                    t["xlsx_created"] += count
+            if not success:
+                t["failed_requests"] += 1
+
+            state.setdefault("asx_events", []).append(
+                {
+                    "ts": now,
+                    "action": action,
+                    "count": count,
+                    "success": bool(success),
+                }
+            )
+            if len(state["asx_events"]) > 5000:
+                state["asx_events"] = state["asx_events"][-5000:]
+            return state
+
+        with self._lock:
+            if self.backend == "file":
+                state = self._read_local()
+                out = mutate(state)
+                out["updated_at"] = utc_now_iso()
+                self._write_local(out)
+                return out
+            if self.backend == "dropbox":
+                return self._with_dropbox_mutation(mutate)
+            state = self._read_local()
+            out = mutate(state)
+            out["updated_at"] = utc_now_iso()
+            self._write_local(out)
+            return out
+
     @staticmethod
     def to_api_payload(state: Optional[Dict[str, Any]], period: str = "all") -> Dict[str, Any]:
         norm = normalize_state(state)
@@ -243,6 +326,7 @@ class StatsStore:
             period = "all"
 
         events = norm.get("events", [])
+        asx_events = norm.get("asx_events", [])
         now = datetime.now(timezone.utc)
         start_dt: Optional[datetime] = None
         if period == "today":
@@ -260,6 +344,14 @@ class StatsStore:
             if start_dt and dt < start_dt:
                 continue
             filtered.append(ev)
+        filtered_asx: list[Dict[str, Any]] = []
+        for ev in asx_events:
+            dt = parse_iso_utc(ev.get("ts"))
+            if not dt:
+                continue
+            if start_dt and dt < start_dt:
+                continue
+            filtered_asx.append(ev)
 
         totals = {
             "reports_downloaded": 0,
@@ -297,6 +389,34 @@ class StatsStore:
         if totals["requests"] > 0:
             success_rate = round(100.0 * (totals["requests"] - totals["failed_requests"]) / totals["requests"], 1)
 
+        asx_totals = _asx_totals_template()
+        asx_by_day: Dict[str, Dict[str, int]] = {}
+        asx_recent_errors: list[Dict[str, Any]] = []
+        for ev in filtered_asx:
+            day = str(ev["ts"])[:10]
+            asx_by_day.setdefault(day, {"unlock_uploaded": 0, "xlsx_created": 0})
+            if ev["action"] == "unlock_upload":
+                asx_totals["unlock_requests"] += 1
+                if ev["success"]:
+                    asx_totals["unlock_uploaded"] += int(ev["count"])
+                    asx_by_day[day]["unlock_uploaded"] += int(ev["count"])
+            if ev["action"] == "xlsx_create":
+                asx_totals["xlsx_requests"] += 1
+                if ev["success"]:
+                    asx_totals["xlsx_created"] += int(ev["count"])
+                    asx_by_day[day]["xlsx_created"] += int(ev["count"])
+            if not ev["success"]:
+                asx_totals["failed_requests"] += 1
+                asx_recent_errors.append(ev)
+        asx_days = sorted(asx_by_day.keys())
+        asx_unlock_values = [asx_by_day[d]["unlock_uploaded"] for d in asx_days]
+        asx_xlsx_values = [asx_by_day[d]["xlsx_created"] for d in asx_days]
+        asx_last = filtered_asx[-1] if filtered_asx else None
+        asx_success_rate = 0.0
+        asx_total_requests = asx_totals["unlock_requests"] + asx_totals["xlsx_requests"]
+        if asx_total_requests > 0:
+            asx_success_rate = round(100.0 * (asx_total_requests - asx_totals["failed_requests"]) / asx_total_requests, 1)
+
         return {
             "labels": labels,
             "values": pdf_values,
@@ -319,4 +439,16 @@ class StatsStore:
             },
             "recent_errors": recent_errors,
             "available_periods": ["today", "7d", "30d", "all"],
+            "asx": {
+                "labels": asx_days,
+                "unlock_values": asx_unlock_values,
+                "xlsx_values": asx_xlsx_values,
+                "totals": asx_totals,
+                "kpis": {
+                    "success_rate": asx_success_rate,
+                    "last_activity_at": asx_last["ts"] if asx_last else None,
+                    "last_action": asx_last["action"] if asx_last else None,
+                },
+                "recent_errors": list(reversed(asx_recent_errors[-5:])),
+            },
         }
