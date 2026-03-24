@@ -168,7 +168,7 @@ def index():
       --shadow:0 8px 28px rgba(0,0,0,.08);
     }
     *{box-sizing:border-box}
-    html,body{height:100%}
+    html,body{min-height:100%}
     body{
       margin:0;
       background:var(--bg);
@@ -177,7 +177,9 @@ def index():
       display:flex;
       justify-content:center;
       align-items:flex-start;
+      min-height:100vh;
       padding:clamp(10px, 2vw, 24px);
+      padding-bottom:clamp(28px, 4vw, 44px);
       overflow-x:hidden;
       overflow-y:auto;
     }
@@ -185,7 +187,7 @@ def index():
     .wrap{
       width:100%;
       max-width:1200px;
-      margin:clamp(10px, 2vw, 24px) auto;
+      margin:0 auto;
       background:var(--card);
       border:1px solid var(--border);
       border-radius:16px;
@@ -323,11 +325,58 @@ def index():
     }
     .stats-meta{margin-top:10px;color:#374151;font-size:13px}
     .stats-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .stats-head-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
     .stats-totals{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
     .stats-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-size:12px}
+    .stats-controls{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+    .period-btn,.refresh-btn{
+      border:1px solid var(--border);
+      background:#fff;
+      color:#1f2937;
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:12px;
+      font-weight:600;
+      cursor:pointer;
+    }
+    .period-btn.active{
+      border-color:#0057B7;
+      color:#0057B7;
+      background:#eef5ff;
+    }
+    .refresh-btn{
+      border-color:#FFD700;
+      background:#fffdf0;
+    }
+    .stats-kpis{
+      margin-top:10px;
+      display:grid;
+      grid-template-columns:repeat(4,minmax(120px,1fr));
+      gap:8px;
+    }
+    .kpi-card{
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:8px 10px;
+    }
+    .kpi-label{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
+    .kpi-value{font-size:16px;font-weight:700;color:#111827}
+    .stats-errors{
+      margin-top:10px;
+      background:#fff;
+      border:1px solid #fecaca;
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:12px;
+      color:#7f1d1d;
+    }
     @media (max-width:768px){
       .stats-head{flex-direction:column;align-items:flex-start}
+      .stats-head-right{align-items:flex-start}
       .stats-totals{justify-content:flex-start}
+      .stats-controls{justify-content:flex-start}
+      .stats-kpis{grid-template-columns:repeat(2,minmax(120px,1fr))}
     }
   </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -336,7 +385,7 @@ def index():
   <div class="wrap">
     <header>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running</h1>
+      <h1>Kenorland Digitizing Server is running 🚀</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -381,12 +430,23 @@ def index():
     <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
       <div class="stats-head">
         <h2 class="text-xl font-semibold" style="margin:0;">Project Statistics</h2>
-        <div id="statsTotals" class="stats-totals"></div>
+        <div class="stats-head-right">
+          <div id="statsTotals" class="stats-totals"></div>
+          <div class="stats-controls">
+            <button class="period-btn" data-period="today">Today</button>
+            <button class="period-btn" data-period="7d">7D</button>
+            <button class="period-btn" data-period="30d">30D</button>
+            <button class="period-btn active" data-period="all">All</button>
+            <button class="refresh-btn" id="refreshStatsBtn" type="button">Refresh</button>
+          </div>
+        </div>
       </div>
+      <div id="statsKpis" class="stats-kpis"></div>
       <div class="mt-4">
         <div class="chart-wrap"><canvas id="projChart"></canvas></div>
       </div>
       <div id="statsMeta" class="stats-meta">Tracking start: n/a</div>
+      <div id="statsErrors" class="stats-errors" style="display:none"></div>
     </section>
 
     <footer>
@@ -431,10 +491,20 @@ def index():
     backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeModal(); });
     document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
 
-      // ====== Chart: project stats ======
-  async function initChart() {
+    // ====== Chart: project stats ======
+  let statsChart = null;
+  let currentPeriod = 'all';
+
+  function setActivePeriodBtn(period){
+    document.querySelectorAll('.period-btn').forEach(btn=>{
+      btn.classList.toggle('active', btn.dataset.period === period);
+    });
+  }
+
+  async function initChart(period = null) {
     try {
-      const res = await fetch('/api/stats', { cache: 'no-store' });
+      if (period) currentPeriod = period;
+      const res = await fetch('/api/stats?period=' + encodeURIComponent(currentPeriod), { cache: 'no-store' });
       const data = await res.json();
       const labels = data.labels || [];
       const values = data.values || [];
@@ -442,8 +512,11 @@ def index():
 
       const ctx = document.getElementById('projChart');
       if (!ctx) return;
+      if (statsChart) {
+        statsChart.destroy();
+      }
 
-      new Chart(ctx, {
+      statsChart = new Chart(ctx, {
         type: 'bar',
         data: {
           labels,
@@ -456,7 +529,7 @@ def index():
               borderWidth: 1
             },
             {
-              label: 'Templates created (1 report = 1)',
+              label: 'Folder created',
               data: templateValues,
               backgroundColor: '#0057B7',
               borderColor: '#0057B7',
@@ -471,6 +544,7 @@ def index():
           scales: { y: { beginAtZero: true, ticks: { precision: 0, stepSize: 1 } } }
         }
       });
+      setActivePeriodBtn(data.period || currentPeriod);
       const meta = document.getElementById('statsMeta');
       const fmt = (iso) => {
         if (!iso) return 'n/a';
@@ -490,7 +564,9 @@ def index():
         meta.innerHTML =
           '<b>Tracking started:</b> ' + fmt(data.tracking_started_at) +
           ' &nbsp;&nbsp;|&nbsp;&nbsp; ' +
-          '<b>Last updated:</b> ' + fmt(data.updated_at);
+          '<b>Last updated:</b> ' + fmt(data.updated_at) +
+          ' &nbsp;&nbsp;|&nbsp;&nbsp; ' +
+          '<b>Period:</b> ' + String(data.period || currentPeriod).toUpperCase();
       }
       const totals = document.getElementById('statsTotals');
       if (totals && data.totals) {
@@ -500,13 +576,44 @@ def index():
           '<span class="stats-box">Requests: <b>' + (data.totals.requests || 0) + '</b></span>' +
           '<span class="stats-box">Failed: <b>' + (data.totals.failed_requests || 0) + '</b></span>';
       }
+
+      const kpis = document.getElementById('statsKpis');
+      if (kpis && data.kpis) {
+        kpis.innerHTML =
+          '<div class=\"kpi-card\"><div class=\"kpi-label\">Success rate</div><div class=\"kpi-value\">' + (data.kpis.success_rate ?? 0) + '%</div></div>' +
+          '<div class=\"kpi-card\"><div class=\"kpi-label\">Top province</div><div class=\"kpi-value\">' + (data.kpis.top_province || '-') + '</div></div>' +
+          '<div class=\"kpi-card\"><div class=\"kpi-label\">Last activity province</div><div class=\"kpi-value\">' + (data.kpis.last_activity_province || '-') + '</div></div>' +
+          '<div class=\"kpi-card\"><div class=\"kpi-label\">Last activity</div><div class=\"kpi-value\" style=\"font-size:13px\">' + fmt(data.kpis.last_activity_at) + '</div></div>';
+      }
+
+      const errors = document.getElementById('statsErrors');
+      if (errors) {
+        const recentErrors = Array.isArray(data.recent_errors) ? data.recent_errors : [];
+        if (recentErrors.length === 0) {
+          errors.style.display = 'none';
+          errors.innerHTML = '';
+        } else {
+          errors.style.display = 'block';
+          errors.innerHTML = '<b>Recent errors:</b> ' + recentErrors.map(e => {
+            return '[' + fmt(e.ts) + '] ' + e.province;
+          }).join(' | ');
+        }
+      }
     } catch (e) {
       console.error('Chart init error:', e);
     }
   }
 
-  // Ð—Ð°Ð¿ÑƒÑÐº Ð¿Ñ€Ð¸ Ð·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ– ÑÑ‚Ð¾Ñ€Ñ–Ð½ÐºÐ¸
-  document.addEventListener('DOMContentLoaded', initChart);
+  document.addEventListener('DOMContentLoaded', () => {
+    initChart('all');
+    document.querySelectorAll('.period-btn').forEach(btn => {
+      btn.addEventListener('click', () => initChart(btn.dataset.period));
+    });
+    const refreshBtn = document.getElementById('refreshStatsBtn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => initChart(currentPeriod));
+    }
+  });
     
   </script>
 </body>
@@ -861,12 +968,13 @@ def all_errors(e):
 @app.get("/api/stats")
 def api_stats():
     try:
+        period = str(request.args.get("period", "all")).strip().lower()
         state = get_stats_store().load()
-        payload = StatsStore.to_api_payload(state)
+        payload = StatsStore.to_api_payload(state, period=period)
         return jsonify(payload), 200
     except Exception as e:
         app.logger.warning(f"Stats read failed: {e}")
-        fallback = StatsStore.to_api_payload(None)
+        fallback = StatsStore.to_api_payload(None, period="all")
         return jsonify(fallback), 200
 
 @app.route('/asx_create_xlsx_test', methods=['POST'])
