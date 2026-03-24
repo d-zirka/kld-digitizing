@@ -371,6 +371,7 @@ def index():
       font-size:12px;
       color:#7f1d1d;
     }
+    #asxChart{width:100% !important;height:100% !important;display:block}
     @media (max-width:768px){
       .stats-head{flex-direction:column;align-items:flex-start}
       .stats-head-right{align-items:flex-start}
@@ -449,6 +450,19 @@ def index():
       <div id="statsErrors" class="stats-errors" style="display:none"></div>
     </section>
 
+    <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
+      <div class="stats-head">
+        <h2 class="text-xl font-semibold" style="margin:0;">ASX Statistics</h2>
+        <div id="asxTotals" class="stats-totals"></div>
+      </div>
+      <div id="asxKpis" class="stats-kpis"></div>
+      <div class="mt-4">
+        <div class="chart-wrap"><canvas id="asxChart"></canvas></div>
+      </div>
+      <div id="asxMeta" class="stats-meta">ASX stats period: ALL</div>
+      <div id="asxErrors" class="stats-errors" style="display:none"></div>
+    </section>
+
     <footer>
       <div>Powered by <b>Flask</b> &middot; <b>Render</b></div>
       <div>Created by <b>Zirka</b> &middot; <b>chatGPT</b></div>
@@ -493,6 +507,7 @@ def index():
 
     // ====== Chart: project stats ======
   let statsChart = null;
+  let asxChart = null;
   let currentPeriod = 'all';
 
   function setActivePeriodBtn(period){
@@ -514,6 +529,10 @@ def index():
       if (!ctx) return;
       if (statsChart) {
         statsChart.destroy();
+      }
+      const asxCtx = document.getElementById('asxChart');
+      if (asxChart) {
+        asxChart.destroy();
       }
 
       statsChart = new Chart(ctx, {
@@ -572,7 +591,7 @@ def index():
       if (totals && data.totals) {
         totals.innerHTML =
           '<span class="stats-box">PDF total: <b>' + (data.totals.reports_downloaded || 0) + '</b></span>' +
-          '<span class="stats-box">Templates total (reports): <b>' + (data.totals.templates_copied || 0) + '</b></span>' +
+          '<span class="stats-box">Folders total (reports): <b>' + (data.totals.templates_copied || 0) + '</b></span>' +
           '<span class="stats-box">Requests: <b>' + (data.totals.requests || 0) + '</b></span>' +
           '<span class="stats-box">Failed: <b>' + (data.totals.failed_requests || 0) + '</b></span>';
       }
@@ -596,6 +615,79 @@ def index():
           errors.style.display = 'block';
           errors.innerHTML = '<b>Recent errors:</b> ' + recentErrors.map(e => {
             return '[' + fmt(e.ts) + '] ' + e.province;
+          }).join(' | ');
+        }
+      }
+
+      const asx = data.asx || {};
+      if (asxCtx) {
+        asxChart = new Chart(asxCtx, {
+          type: 'bar',
+          data: {
+            labels: asx.labels || [],
+            datasets: [
+              {
+                label: 'Unlocked & uploaded PDFs',
+                data: asx.unlock_values || [],
+                backgroundColor: '#0057B7',
+                borderColor: '#0057B7',
+                borderWidth: 1
+              },
+              {
+                label: 'Created XLSX files',
+                data: asx.xlsx_values || [],
+                backgroundColor: '#FFD700',
+                borderColor: '#FFD700',
+                borderWidth: 1
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0, stepSize: 1 } } }
+          }
+        });
+      }
+
+      const asxTotals = document.getElementById('asxTotals');
+      if (asxTotals && asx.totals) {
+        asxTotals.innerHTML =
+          '<span class="stats-box">Unlock requests: <b>' + (asx.totals.unlock_requests || 0) + '</b></span>' +
+          '<span class="stats-box">Unlocked PDFs: <b>' + (asx.totals.unlock_uploaded || 0) + '</b></span>' +
+          '<span class="stats-box">XLSX requests: <b>' + (asx.totals.xlsx_requests || 0) + '</b></span>' +
+          '<span class="stats-box">XLSX created: <b>' + (asx.totals.xlsx_created || 0) + '</b></span>' +
+          '<span class="stats-box">Failed: <b>' + (asx.totals.failed_requests || 0) + '</b></span>';
+      }
+
+      const asxKpis = document.getElementById('asxKpis');
+      if (asxKpis && asx.kpis) {
+        asxKpis.innerHTML =
+          '<div class="kpi-card"><div class="kpi-label">Success rate</div><div class="kpi-value">' + (asx.kpis.success_rate ?? 0) + '%</div></div>' +
+          '<div class="kpi-card"><div class="kpi-label">Last action</div><div class="kpi-value">' + (asx.kpis.last_action || '-') + '</div></div>' +
+          '<div class="kpi-card"><div class="kpi-label">Last activity</div><div class="kpi-value" style="font-size:13px">' + fmt(asx.kpis.last_activity_at) + '</div></div>' +
+          '<div class="kpi-card"><div class="kpi-label">Period</div><div class="kpi-value">' + String(data.period || currentPeriod).toUpperCase() + '</div></div>';
+      }
+
+      const asxMeta = document.getElementById('asxMeta');
+      if (asxMeta) {
+        asxMeta.innerHTML =
+          '<b>ASX tracking started:</b> ' + fmt(data.tracking_started_at) +
+          ' &nbsp;&nbsp;|&nbsp;&nbsp; ' +
+          '<b>Last updated:</b> ' + fmt(data.updated_at);
+      }
+
+      const asxErrors = document.getElementById('asxErrors');
+      if (asxErrors) {
+        const recentAsxErrors = Array.isArray(asx.recent_errors) ? asx.recent_errors : [];
+        if (recentAsxErrors.length === 0) {
+          asxErrors.style.display = 'none';
+          asxErrors.innerHTML = '';
+        } else {
+          asxErrors.style.display = 'block';
+          asxErrors.innerHTML = '<b>Recent ASX errors:</b> ' + recentAsxErrors.map(e => {
+            return '[' + fmt(e.ts) + '] ' + e.action;
           }).join(' | ');
         }
       }
@@ -675,6 +767,13 @@ def track_download_stats(province: str, downloaded_pdfs: int, templates_copied: 
         )
     except Exception as e:
         app.logger.warning(f"Stats update failed: {e}")
+
+
+def track_asx_stats(action: str, count: int, success: bool) -> None:
+    try:
+        get_stats_store().apply_asx_event(action=action, count=count, success=success)
+    except Exception as e:
+        app.logger.warning(f"ASX stats update failed: {e}")
 
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
     try:
@@ -901,9 +1000,11 @@ def asx_unlock_upload():
         token = get_dropbox_access_token()
         dbx = dropbox.Dropbox(token)
         dbx.files_upload(unlocked, path, mode=WriteMode.overwrite)
+        track_asx_stats("unlock_upload", 1, True)
 
         return jsonify(message="Uploaded (unlocked if possible)", path=path), 200
     except Exception as e:
+        track_asx_stats("unlock_upload", 0, False)
         app.logger.error(f"/asx_unlock_upload error: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
@@ -1103,6 +1204,7 @@ def asx_create_xlsx_dropbox_test():
 
         # 6. Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ð¸Ð¹ Ñ„Ð°Ð¹Ð» Ð½Ð°Ð·Ð°Ð´ Ñƒ Dropbox
         upload_result = dropbox_upload_file(output_path, output.getvalue(), token)
+        track_asx_stats("xlsx_create", 1, True)
 
         return jsonify({
             "ok": True,
@@ -1116,6 +1218,7 @@ def asx_create_xlsx_dropbox_test():
         }), 200
 
     except Exception as e:
+        track_asx_stats("xlsx_create", 0, False)
         return jsonify({
             "ok": False,
             "error": str(e)
