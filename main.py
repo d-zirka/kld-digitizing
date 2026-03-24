@@ -177,15 +177,15 @@ def index():
       display:flex;
       justify-content:center;
       align-items:flex-start;
-      padding:20px 20px 56px 20px;
+      padding:clamp(10px, 2vw, 24px);
       overflow-x:hidden;
       overflow-y:auto;
     }
 
     .wrap{
       width:100%;
-      max-width:1100px;
-     margin:10px auto 30px auto;
+      max-width:1200px;
+      margin:0 auto;
       background:var(--card);
       border:1px solid var(--border);
       border-radius:16px;
@@ -281,12 +281,12 @@ def index():
       }
     }
     
-    section{background:var(--sub);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+    section{background:var(--sub);border:1px solid var(--border);border-radius:12px;padding:clamp(12px, 1.8vw, 18px)}
     section h3{margin:0 0 6px}
     ul{margin:8px 0 0 18px;padding:0}
 
     /* Ñ‡Ð¸Ð¿Ð¸ Ð¹ ÐºÐ½Ð¾Ð¿ÐºÐ¸ Ð·Ð½Ð¸Ð·Ñƒ */
-    .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+    .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;margin-top:16px}
     .chip{
       display:inline-block;background:#f3f4f6;border:1px solid var(--border);color:#374151;
       font-size:12.5px;line-height:1;padding:7px 12px;border-radius:999px;font-weight:500;
@@ -308,9 +308,16 @@ def index():
 
     footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12px}
     footer b{font-weight:700}
+    .chart-wrap{
+      position:relative;
+      width:100%;
+      height:clamp(240px, 42vh, 380px);
+      min-height:240px;
+    }
     #projChart{
       width:100% !important;
-      max-height:320px;
+      height:100% !important;
+      display:block;
     }
     .stats-meta{margin-top:10px;color:#374151;font-size:13px}
     .stats-totals{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
@@ -322,7 +329,7 @@ def index():
   <div class="wrap">
     <header>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running ðŸš€</h1>
+      <h1>Kenorland Digitizing Server is running</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -365,17 +372,17 @@ def index():
 
         <!-- ===== STATS SECTION ===== -->
     <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
-      <h2 class="text-xl font-semibold">Ð¡Ñ‚Ð°Ñ‚Ð¸ÑÑ‚Ð¸ÐºÐ° Ð¿Ñ€Ð¾Ñ”ÐºÑ‚Ñ–Ð²</h2>
+      <h2 class="text-xl font-semibold">Project Statistics</h2>
       <div class="mt-4">
-        <canvas id="projChart"></canvas>
+        <div class="chart-wrap"><canvas id="projChart"></canvas></div>
       </div>
       <div id="statsMeta" class="stats-meta">Tracking start: n/a</div>
       <div id="statsTotals" class="stats-totals"></div>
     </section>
 
     <footer>
-      <div>Powered by <b>Flask</b> Â· <b>Render</b></div>
-      <div>Created by <b>Zirka</b> Â· <b>chatGPT</b></div>
+      <div>Powered by <b>Flask</b> | <b>Render</b></div>
+      <div>Created by <b>Zirka</b> | <b>chatGPT</b></div>
     </footer>
   </div>
 
@@ -383,7 +390,7 @@ def index():
   <div id="backdrop" class="backdrop" role="dialog" aria-modal="true" aria-labelledby="healthTitle">
     <div class="modal">
       <h4 id="healthTitle">Service health</h4>
-      <div id="healthBody">Checkingâ€¦</div>
+      <div id="healthBody">Checking...</div>
       <div style="margin-top:12px;display:flex;justify-content:flex-end">
         <button class="btn" onclick="closeModal()">Close</button>
       </div>
@@ -399,7 +406,7 @@ def index():
 
     async function checkHealth(){
       openModal();
-      bodyEl.innerHTML = 'Checkingâ€¦';
+      bodyEl.innerHTML = 'Checking...';
       try{
         const res = await fetch('/healthz', { cache:'no-store' });
         const txt = (await res.text() || '').trim();
@@ -433,13 +440,14 @@ def index():
           labels,
           datasets: [
             { label: 'PDF downloaded', data: values },
-            { label: 'Templates copied', data: templateValues }
+            { label: 'Templates created (1 report = 1)', data: templateValues }
           ]
         },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
           plugins: { legend: { display: true } },
-          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+          scales: { y: { beginAtZero: true, ticks: { precision: 0, stepSize: 1 } } }
         }
       });
       const meta = document.getElementById('statsMeta');
@@ -450,7 +458,7 @@ def index():
       if (totals && data.totals) {
         totals.innerHTML =
           '<span class="stats-box">PDF total: <b>' + (data.totals.reports_downloaded || 0) + '</b></span>' +
-          '<span class="stats-box">Templates total: <b>' + (data.totals.templates_copied || 0) + '</b></span>' +
+          '<span class="stats-box">Templates total (reports): <b>' + (data.totals.templates_copied || 0) + '</b></span>' +
           '<span class="stats-box">Requests: <b>' + (data.totals.requests || 0) + '</b></span>' +
           '<span class="stats-box">Failed: <b>' + (data.totals.failed_requests || 0) + '</b></span>';
       }
@@ -587,7 +595,7 @@ def download_ar_generic(ar_number: str, province: str, project: str,
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"DDH copy failed: {e}")
     if isinstance(stats_out, dict):
-        stats_out["templates_copied"] = template_copies
+        stats_out["templates_copied"] = 1
     if not list_page_url:
         return 0
     resp = session.get(list_page_url, timeout=DEFAULT_TIMEOUT)
@@ -664,7 +672,7 @@ def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out:
     except dropbox.exceptions.ApiError as e:
         app.logger.warning(f"DDH copy failed: {e}")
     if isinstance(stats_out, dict):
-        stats_out["templates_copied"] = template_copies
+        stats_out["templates_copied"] = 1
 
     # ÐŸÑ€ÑÐ¼Ð¸Ð¹ PDF Ð±ÐµÐ· ÑÑƒÑ„Ñ–ÐºÑÑ–Ð²
     url = f"https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf"
