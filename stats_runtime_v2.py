@@ -2,7 +2,7 @@ import json
 import os
 import threading
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 PROVINCES = ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut"]
@@ -10,6 +10,13 @@ PROVINCES = ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut"]
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def parse_iso_utc(value: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 def _province_template() -> Dict[str, Any]:
@@ -25,7 +32,7 @@ def _province_template() -> Dict[str, Any]:
 def default_state() -> Dict[str, Any]:
     now = utc_now_iso()
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "tracking_started_at": now,
         "updated_at": now,
         "totals": {
@@ -35,6 +42,7 @@ def default_state() -> Dict[str, Any]:
             "failed_requests": 0,
         },
         "by_province": {p: _province_template() for p in PROVINCES},
+        "events": [],
     }
 
 
@@ -43,7 +51,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         return state
 
-    state["schema_version"] = int(raw.get("schema_version", 1) or 1)
+    state["schema_version"] = int(raw.get("schema_version", 2) or 2)
     state["tracking_started_at"] = str(raw.get("tracking_started_at") or state["tracking_started_at"])
     state["updated_at"] = str(raw.get("updated_at") or state["updated_at"])
 
@@ -66,6 +74,25 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         row["last_event_at"] = incoming.get("last_event_at") if incoming.get("last_event_at") else None
         state["by_province"][p] = row
 
+    raw_events = raw.get("events") if isinstance(raw.get("events"), list) else []
+    events: list[Dict[str, Any]] = []
+    for item in raw_events[-5000:]:
+        if not isinstance(item, dict):
+            continue
+        province = str(item.get("province") or "").strip()
+        ts = str(item.get("ts") or "").strip()
+        if province not in PROVINCES or not ts:
+            continue
+        events.append(
+            {
+                "ts": ts,
+                "province": province,
+                "downloaded_pdfs": max(0, int(item.get("downloaded_pdfs", 0) or 0)),
+                "templates_copied": max(0, int(item.get("templates_copied", 0) or 0)),
+                "success": bool(item.get("success", False)),
+            }
+        )
+    state["events"] = events
     return state
 
 
@@ -84,10 +111,6 @@ class StatsStore:
         self.token_provider = token_provider
         self._logger = logger
         self._lock = threading.Lock()
-
-    def _log(self, level: str, msg: str) -> None:
-        if self._logger and hasattr(self._logger, level):
-            getattr(self._logger, level)(msg)
 
     def _read_local(self) -> Dict[str, Any]:
         if not os.path.exists(self.local_path):
@@ -181,6 +204,18 @@ class StatsStore:
             state["totals"]["templates_copied"] += templates_copied
 
             row["last_event_at"] = now
+
+            state.setdefault("events", []).append(
+                {
+                    "ts": now,
+                    "province": province,
+                    "downloaded_pdfs": downloaded_pdfs,
+                    "templates_copied": templates_copied,
+                    "success": bool(success),
+                }
+            )
+            if len(state["events"]) > 5000:
+                state["events"] = state["events"][-5000:]
             return state
 
         with self._lock:
@@ -201,11 +236,66 @@ class StatsStore:
             return out
 
     @staticmethod
-    def to_api_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+    def to_api_payload(state: Optional[Dict[str, Any]], period: str = "all") -> Dict[str, Any]:
         norm = normalize_state(state)
+        period = str(period or "all").lower().strip()
+        if period not in {"today", "7d", "30d", "all"}:
+            period = "all"
+
+        events = norm.get("events", [])
+        now = datetime.now(timezone.utc)
+        start_dt: Optional[datetime] = None
+        if period == "today":
+            start_dt = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+        elif period == "7d":
+            start_dt = now - timedelta(days=7)
+        elif period == "30d":
+            start_dt = now - timedelta(days=30)
+
+        filtered: list[Dict[str, Any]] = []
+        for ev in events:
+            dt = parse_iso_utc(ev.get("ts"))
+            if not dt:
+                continue
+            if start_dt and dt < start_dt:
+                continue
+            filtered.append(ev)
+
+        totals = {
+            "reports_downloaded": 0,
+            "templates_copied": 0,
+            "requests": 0,
+            "failed_requests": 0,
+        }
+        by_province = {p: _province_template() for p in PROVINCES}
+        for ev in filtered:
+            p = ev["province"]
+            row = by_province[p]
+            row["requests"] += 1
+            totals["requests"] += 1
+            row["reports_downloaded"] += int(ev["downloaded_pdfs"])
+            totals["reports_downloaded"] += int(ev["downloaded_pdfs"])
+            row["templates_copied"] += int(ev["templates_copied"])
+            totals["templates_copied"] += int(ev["templates_copied"])
+            if not ev["success"]:
+                row["failed_requests"] += 1
+                totals["failed_requests"] += 1
+            row["last_event_at"] = ev["ts"]
+
         labels = PROVINCES[:]
-        pdf_values = [norm["by_province"][p]["reports_downloaded"] for p in labels]
-        template_values = [norm["by_province"][p]["templates_copied"] for p in labels]
+        pdf_values = [by_province[p]["reports_downloaded"] for p in labels]
+        template_values = [by_province[p]["templates_copied"] for p in labels]
+
+        top_province = max(labels, key=lambda p: (by_province[p]["reports_downloaded"], by_province[p]["requests"]))
+        if by_province[top_province]["reports_downloaded"] == 0:
+            top_province = None
+
+        last_activity = filtered[-1] if filtered else None
+        recent_errors = [e for e in reversed(filtered) if not e["success"]][:5]
+
+        success_rate = 0.0
+        if totals["requests"] > 0:
+            success_rate = round(100.0 * (totals["requests"] - totals["failed_requests"]) / totals["requests"], 1)
 
         return {
             "labels": labels,
@@ -213,6 +303,20 @@ class StatsStore:
             "templates_values": template_values,
             "tracking_started_at": norm["tracking_started_at"],
             "updated_at": norm["updated_at"],
-            "totals": norm["totals"],
-            "by_province": norm["by_province"],
+            "period": period,
+            "totals": totals,
+            "by_province": by_province,
+            "kpis": {
+                "pdf_total": totals["reports_downloaded"],
+                "reports_total": totals["templates_copied"],
+                "requests_total": totals["requests"],
+                "failed_total": totals["failed_requests"],
+                "success_rate": success_rate,
+                "top_province": top_province,
+                "last_activity_at": last_activity["ts"] if last_activity else None,
+                "last_activity_province": last_activity["province"] if last_activity else None,
+                "last_activity_success": last_activity["success"] if last_activity else None,
+            },
+            "recent_errors": recent_errors,
+            "available_periods": ["today", "7d", "30d", "all"],
         }
