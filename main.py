@@ -413,7 +413,7 @@ def index():
           <li>Removes encryption and copy/print restrictions</li>
           <li>Creates report Excel files from template</li>
           <li>Automatically renames Excel sheets with PDF_ID</li>
-          <li>Restores dropdown lists (Country, UtmZone, HoleType, HoleSize, SampleType, Sample_Medium)</li>
+          <li>Restores dropdown lists</li>
           <li>Writes PDF_ID into Excel column</li>
         </ul>
       </section>
@@ -430,7 +430,7 @@ def index():
         <!-- ===== STATS SECTION ===== -->
     <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
       <div class="stats-head">
-        <h2 class="text-xl font-semibold" style="margin:0;">Project Statistics</h2>
+        <h2 class="text-xl font-semibold" style="margin:0;">AR Statistics</h2>
         <div class="stats-head-right">
           <div id="statsTotals" class="stats-totals"></div>
           <div class="stats-controls">
