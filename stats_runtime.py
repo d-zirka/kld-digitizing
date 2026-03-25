@@ -147,7 +147,7 @@ class StatsStore:
     def __init__(
         self,
         backend: str = "file",
-        dropbox_path: str = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/project_stats.json",
+        dropbox_path: str = "/Zirka/OCTOGIT/DIGITIZING/GAppS/github/stats/project_stats.json",
         local_path: Optional[str] = None,
         token_provider=None,
         logger=None,
