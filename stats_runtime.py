@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 
 PROVINCES = ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut"]
 
+MAX_EVENTS = 5000
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -73,6 +75,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             state["totals"][k] = int(raw_totals.get(k, 0) or 0)
         except Exception:
             state["totals"][k] = 0
+
     raw_asx_totals = raw.get("asx_totals") if isinstance(raw.get("asx_totals"), dict) else {}
     for k in ("unlock_requests", "unlock_uploaded", "xlsx_requests", "xlsx_created", "failed_requests"):
         try:
@@ -94,7 +97,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
     raw_events = raw.get("events") if isinstance(raw.get("events"), list) else []
     events: list[Dict[str, Any]] = []
-    for item in raw_events[-5000:]:
+    for item in raw_events[-MAX_EVENTS:]:
         if not isinstance(item, dict):
             continue
         province = str(item.get("province") or "").strip()
@@ -111,9 +114,10 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             }
         )
     state["events"] = events
+
     raw_asx_events = raw.get("asx_events") if isinstance(raw.get("asx_events"), list) else []
     asx_events: list[Dict[str, Any]] = []
-    for item in raw_asx_events[-5000:]:
+    for item in raw_asx_events[-MAX_EVENTS:]:
         if not isinstance(item, dict):
             continue
         ts = str(item.get("ts") or "").strip()
@@ -132,18 +136,25 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return state
 
 
+def get_default_stats_path() -> str:
+    env_path = os.getenv("STATS_LOCAL_PATH")
+    if env_path and str(env_path).strip():
+        return os.path.abspath(str(env_path).strip())
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "stats", "project_stats.json"))
+
+
 class StatsStore:
     def __init__(
         self,
-        backend: str = "dropbox",
-        dropbox_path: str = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/ar_stats_v1.json",
-        local_path: str = "ar_stats_v1.local.json",
+        backend: str = "file",
+        dropbox_path: str = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/project_stats.json",
+        local_path: Optional[str] = None,
         token_provider=None,
         logger=None,
     ):
-        self.backend = (backend or "dropbox").strip().lower()
+        self.backend = (backend or "file").strip().lower()
         self.dropbox_path = dropbox_path
-        self.local_path = local_path
+        self.local_path = local_path or get_default_stats_path()
         self.token_provider = token_provider
         self._logger = logger
         self._lock = threading.Lock()
@@ -151,8 +162,16 @@ class StatsStore:
     def _read_local(self) -> Dict[str, Any]:
         if not os.path.exists(self.local_path):
             return default_state()
-        with open(self.local_path, "r", encoding="utf-8") as f:
-            return normalize_state(json.load(f))
+        try:
+            with open(self.local_path, "r", encoding="utf-8") as f:
+                return normalize_state(json.load(f))
+        except Exception:
+            # Backup invalid JSON and reset
+            try:
+                os.rename(self.local_path, self.local_path + ".corrupt")
+            except Exception:
+                pass
+            return default_state()
 
     def _write_local(self, state: Dict[str, Any]) -> None:
         os.makedirs(os.path.dirname(self.local_path) or ".", exist_ok=True)
@@ -250,8 +269,8 @@ class StatsStore:
                     "success": bool(success),
                 }
             )
-            if len(state["events"]) > 5000:
-                state["events"] = state["events"][-5000:]
+            if len(state["events"]) > MAX_EVENTS:
+                state["events"] = state["events"][-MAX_EVENTS:]
             return state
 
         with self._lock:
@@ -299,8 +318,8 @@ class StatsStore:
                     "success": bool(success),
                 }
             )
-            if len(state["asx_events"]) > 5000:
-                state["asx_events"] = state["asx_events"][-5000:]
+            if len(state["asx_events"]) > MAX_EVENTS:
+                state["asx_events"] = state["asx_events"][-MAX_EVENTS:]
             return state
 
         with self._lock:
