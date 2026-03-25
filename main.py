@@ -262,6 +262,12 @@ def index():
       align-items:center;
       margin-bottom:8px;
       flex-wrap:wrap;
+    .top-meta{
+      width:100%;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.4;
+    }
     }
     .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#10b981);display:grid;place-items:center;color:#fff;font-weight:700}
     h1{margin:0;font-size:clamp(22px,3vw,30px)}
@@ -447,8 +453,10 @@ def index():
 <body>
   <div class="wrap">
     <header>
+      <div class="top-meta">Powered by <b>Flask</b> &middot; <b>Render</b></div>
+      <div class="top-meta">Created by <b>Zirka</b> &middot; <b>chatGPT</b> &middot; <b>Codex</b></div>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running 🚀</h1>
+      <h1>Kenorland Digitizing Server is running рџљЂ</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -526,10 +534,7 @@ def index():
       <div id="asxErrors" class="stats-errors" style="display:none"></div>
     </section>
 
-    <footer>
-      <div>Powered by <b>Flask</b> &middot; <b>Render</b></div>
-      <div>Created by <b>Zirka</b> &middot; <b>chatGPT</b> &middot; <b>Codex</b></div>
-    </footer>
+    <footer></footer>
   </div>
 
   <!-- Health modal -->
