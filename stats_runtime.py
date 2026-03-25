@@ -108,6 +108,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             {
                 "ts": ts,
                 "province": province,
+                "report_id": str(item.get("report_id") or "").strip() or None,
                 "downloaded_pdfs": max(0, int(item.get("downloaded_pdfs", 0) or 0)),
                 "templates_copied": max(0, int(item.get("templates_copied", 0) or 0)),
                 "success": bool(item.get("success", False)),
@@ -233,11 +234,13 @@ class StatsStore:
     def apply_download_event(
         self,
         province: str,
+        report_id: Optional[str],
         downloaded_pdfs: int,
         templates_copied: int,
         success: bool,
     ) -> Dict[str, Any]:
         province = province if province in PROVINCES else "Quebec"
+        report_id = str(report_id or "").strip() or None
         downloaded_pdfs = max(0, int(downloaded_pdfs or 0))
         templates_copied = max(0, int(templates_copied or 0))
 
@@ -264,6 +267,7 @@ class StatsStore:
                 {
                     "ts": now,
                     "province": province,
+                    "report_id": report_id,
                     "downloaded_pdfs": downloaded_pdfs,
                     "templates_copied": templates_copied,
                     "success": bool(success),
