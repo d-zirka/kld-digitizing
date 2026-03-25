@@ -453,7 +453,7 @@ def index():
 <body>
   <div class="wrap">
     <header>
-      <div class="top-meta">Powered by <b>Flask</b> &middot; <b>Render</b> &nbsp;&nbsp;|&nbsp;&nbsp; Created by <b>Zirka</b> &middot; <b>chatGPT</b> &middot; <b>Codex</b></div>
+      <div class="top-meta">Created by <b>Zirka</b> &middot; <b>chatGPT</b> &middot; <b>Codex</b> &nbsp;&nbsp;|&nbsp;&nbsp; Powered by <b>Flask</b> &middot; <b>Render</b></div>
       <div class="logo">KLD</div>
       <h1>Kenorland Digitizing Server is running &#128640;</h1>
       <div class="tag">healthy</div>
