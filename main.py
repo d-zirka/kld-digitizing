@@ -3,6 +3,8 @@ import base64
 import tempfile
 import json
 import logging
+import time
+import threading
 from typing import Optional, List
 from urllib.parse import urljoin, urlparse
 from itertools import product
@@ -33,6 +35,65 @@ from openpyxl.utils import get_column_letter
 # Flask app & logging
 # -----------------------------------------------------------------------------
 app = Flask(__name__)
+
+IDEMPOTENCY_TTL_SECONDS = max(60, int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "900")))
+_idempotency_lock = threading.Lock()
+_idempotency_cache: dict[str, dict[str, object]] = {}
+
+
+def _idempotency_cleanup_unlocked() -> None:
+    now = time.time()
+    stale = [k for k, v in _idempotency_cache.items() if float(v.get("expires_at", 0.0)) <= now]
+    for k in stale:
+        _idempotency_cache.pop(k, None)
+
+
+def _idempotency_begin(key: Optional[str]) -> tuple[str, Optional[dict[str, object]]]:
+    if not key:
+        return "run", None
+    with _idempotency_lock:
+        _idempotency_cleanup_unlocked()
+        entry = _idempotency_cache.get(key)
+        if not entry:
+            _idempotency_cache[key] = {
+                "status": "in_progress",
+                "expires_at": time.time() + IDEMPOTENCY_TTL_SECONDS,
+                "response": None,
+            }
+            return "run", None
+        if entry.get("status") == "done" and isinstance(entry.get("response"), dict):
+            return "cached", entry["response"]  # type: ignore[index]
+        return "in_progress", None
+
+
+def _idempotency_finish(key: Optional[str], payload: dict[str, object], status_code: int) -> None:
+    if not key:
+        return
+    with _idempotency_lock:
+        if status_code >= 500:
+            _idempotency_cache.pop(key, None)
+            return
+        _idempotency_cache[key] = {
+            "status": "done",
+            "expires_at": time.time() + IDEMPOTENCY_TTL_SECONDS,
+            "response": {"payload": payload, "status_code": int(status_code)},
+        }
+
+
+def _idempotency_abort(key: Optional[str]) -> None:
+    if not key:
+        return
+    with _idempotency_lock:
+        entry = _idempotency_cache.get(key)
+        if entry and entry.get("status") == "in_progress":
+            _idempotency_cache.pop(key, None)
+
+
+def _idempotency_key(prefix: str) -> Optional[str]:
+    value = str(request.headers.get("X-Idempotency-Key", "")).strip()
+    if not value:
+        return None
+    return f"{prefix}:{value[:200]}"
 
 def dropbox_download_file(dropbox_path, token):
     url = 'https://content.dropboxapi.com/2/files/download'
@@ -992,22 +1053,37 @@ def _unlock_pdf_bytes(data: bytes) -> bytes:
 
 @app.post("/asx_unlock_upload")
 def asx_unlock_upload():
+    idem_key = _idempotency_key("asx_unlock_upload")
+    idem_state, idem_cached = _idempotency_begin(idem_key)
+    if idem_state == "cached" and isinstance(idem_cached, dict):
+        return jsonify(idem_cached.get("payload", {})), int(idem_cached.get("status_code", 200))
+    if idem_state == "in_progress":
+        return jsonify(error="Duplicate request in progress"), 409
+
     try:
         _check_bearer(request)
     except PermissionError:
-        return jsonify(error="Unauthorized"), 401
+        payload = {"error": "Unauthorized"}
+        _idempotency_finish(idem_key, payload, 401)
+        return jsonify(payload), 401
 
     f = request.files.get("file")
     path = request.form.get("dropbox_path", "")
     if not f or not path:
-        return jsonify(error="Missing file or dropbox_path"), 400
+        payload = {"error": "Missing file or dropbox_path"}
+        _idempotency_finish(idem_key, payload, 400)
+        return jsonify(payload), 400
     if not _is_allowed_asx_path(path):
-        return jsonify(error="Path not allowed"), 400
+        payload = {"error": "Path not allowed"}
+        _idempotency_finish(idem_key, payload, 400)
+        return jsonify(payload), 400
 
     try:
         data = f.read()
         if not data:
-            return jsonify(error="Empty file"), 400
+            payload = {"error": "Empty file"}
+            _idempotency_finish(idem_key, payload, 400)
+            return jsonify(payload), 400
 
         unlocked = _unlock_pdf_bytes(data)
 
@@ -1016,10 +1092,13 @@ def asx_unlock_upload():
         dbx.files_upload(unlocked, path, mode=WriteMode.overwrite)
         track_asx_stats("unlock_upload", 1, True)
 
-        return jsonify(message="Uploaded (unlocked if possible)", path=path), 200
+        payload = {"message": "Uploaded (unlocked if possible)", "path": path}
+        _idempotency_finish(idem_key, payload, 200)
+        return jsonify(payload), 200
     except Exception as e:
         track_asx_stats("unlock_upload", 0, False)
         app.logger.error(f"/asx_unlock_upload error: {e}", exc_info=True)
+        _idempotency_abort(idem_key)
         return jsonify(error=str(e)), 500
 
 
@@ -1028,12 +1107,21 @@ def asx_unlock_upload():
 # -----------------------------------------------------------------------------
 @app.route("/download_gm", methods=["POST"])
 def download_gm():
+    idem_key = _idempotency_key("download_gm")
+    idem_state, idem_cached = _idempotency_begin(idem_key)
+    if idem_state == "cached" and isinstance(idem_cached, dict):
+        return jsonify(idem_cached.get("payload", {})), int(idem_cached.get("status_code", 200))
+    if idem_state == "in_progress":
+        return jsonify(error="Duplicate request in progress"), 409
+
     data = request.get_json(force=True, silent=True) or {}
     num  = str(data.get("ar_number", "")).strip()
     prov = str(data.get("province", "")).strip()
     proj = str(data.get("project", "")).strip()
     if not all([num, prov, proj]):
-        return jsonify(error="Missing parameters"), 400
+        payload = {"error": "Missing parameters"}
+        _idempotency_finish(idem_key, payload, 400)
+        return jsonify(payload), 400
     cnt = 0
     stats_out: dict = {}
     tpl = 0
@@ -1052,18 +1140,24 @@ def download_gm():
         elif prov == "Manitoba":
             cnt = download_ar_manitoba(num, prov, proj, stats_out=stats_out)
         else:
-            return jsonify(error="Invalid province or AR#"), 400
+            payload = {"error": "Invalid province or AR#"}
+            _idempotency_finish(idem_key, payload, 400)
+            return jsonify(payload), 400
         tpl = int(stats_out.get("templates_copied", 0) or 0)
         track_download_stats(prov, cnt, tpl, True)
         msg = f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded."
-        return jsonify(message=msg, downloaded_pdfs=cnt, templates_copied=tpl), 200
+        payload = {"message": msg, "downloaded_pdfs": cnt, "templates_copied": tpl}
+        _idempotency_finish(idem_key, payload, 200)
+        return jsonify(payload), 200
     except requests.HTTPError as he:
         track_download_stats(prov, cnt, tpl, False)
         app.logger.error(f"HTTP error: {he}", exc_info=True)
+        _idempotency_abort(idem_key)
         return jsonify(error=str(he)), 502
     except Exception as e:
         track_download_stats(prov, cnt, tpl, False)
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
+        _idempotency_abort(idem_key)
         return jsonify(error=str(e)), 500
 
 # -----------------------------------------------------------------------------
@@ -1149,6 +1243,13 @@ def asx_create_xlsx_rename_test():
 
 @app.route('/asx_create_xlsx_dropbox_test', methods=['POST'])
 def asx_create_xlsx_dropbox_test():
+    idem_key = _idempotency_key("asx_create_xlsx_dropbox_test")
+    idem_state, idem_cached = _idempotency_begin(idem_key)
+    if idem_state == "cached" and isinstance(idem_cached, dict):
+        return jsonify(idem_cached.get("payload", {})), int(idem_cached.get("status_code", 200))
+    if idem_state == "in_progress":
+        return jsonify(error="Duplicate request in progress"), 409
+
     data = request.get_json(silent=True) or {}
 
     report_id = str(data.get('report_id') or '').strip()
@@ -1156,17 +1257,24 @@ def asx_create_xlsx_dropbox_test():
     output_path = str(data.get('output_path') or '').strip()
 
     if not report_id:
-        return jsonify({"ok": False, "error": "report_id is required"}), 400
+        payload = {"ok": False, "error": "report_id is required"}
+        _idempotency_finish(idem_key, payload, 400)
+        return jsonify(payload), 400
 
     if not template_path:
-        return jsonify({"ok": False, "error": "template_path is required"}), 400
+        payload = {"ok": False, "error": "template_path is required"}
+        _idempotency_finish(idem_key, payload, 400)
+        return jsonify(payload), 400
 
     if not output_path:
-        return jsonify({"ok": False, "error": "output_path is required"}), 400
+        payload = {"ok": False, "error": "output_path is required"}
+        _idempotency_finish(idem_key, payload, 400)
+        return jsonify(payload), 400
 
     try:
         token = get_dropbox_access_token()
     except Exception as e:
+        _idempotency_abort(idem_key)
         return jsonify({"ok": False, "error": f"Dropbox auth failed: {str(e)}"}), 500
 
     try:
@@ -1220,7 +1328,7 @@ def asx_create_xlsx_dropbox_test():
         upload_result = dropbox_upload_file(output_path, output.getvalue(), token)
         track_asx_stats("xlsx_create", 1, True)
 
-        return jsonify({
+        payload = {
             "ok": True,
             "message": "Dropbox XLSX created successfully",
             "report_id": report_id,
@@ -1229,10 +1337,13 @@ def asx_create_xlsx_dropbox_test():
             "sheet_names": wb.sheetnames,
             "renamed": renamed,
             "dropbox_result": upload_result
-        }), 200
+        }
+        _idempotency_finish(idem_key, payload, 200)
+        return jsonify(payload), 200
 
     except Exception as e:
         track_asx_stats("xlsx_create", 0, False)
+        _idempotency_abort(idem_key)
         return jsonify({
             "ok": False,
             "error": str(e)
