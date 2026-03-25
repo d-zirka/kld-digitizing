@@ -581,7 +581,7 @@ def index():
       };
       if (meta) {
         meta.innerHTML =
-          '<b>Tracking started:</b> ' + fmt(data.tracking_started_at) +
+          '<b>AR tracking started:</b> ' + fmt(data.tracking_started_at) +
           ' &nbsp;&nbsp;|&nbsp;&nbsp; ' +
           '<b>Last updated:</b> ' + fmt(data.updated_at) +
           ' &nbsp;&nbsp;|&nbsp;&nbsp; ' +
