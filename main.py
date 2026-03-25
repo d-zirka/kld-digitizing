@@ -114,7 +114,7 @@ logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
 # -----------------------------------------------------------------------------
-# HTTP session Ð· Ñ‚Ð°Ð¹Ð¼Ð°ÑƒÑ‚Ð°Ð¼Ð¸ Ñ‚Ð° Ñ€ÐµÑ‚Ñ€Ð°ÑÐ¼Ð¸
+# HTTP session with timeouts and retries
 # -----------------------------------------------------------------------------
 DEFAULT_TIMEOUT = 30
 
@@ -134,7 +134,7 @@ def _requests_session() -> requests.Session:
 session = _requests_session()
 
 # -----------------------------------------------------------------------------
-# Ð¡Ð»ÑƒÐ¶Ð±Ð¾Ð²Ñ– Ð¼Ð°Ñ€ÑˆÑ€ÑƒÑ‚Ð¸
+# Utility routes
 # -----------------------------------------------------------------------------
 @app.route("/healthz")
 def healthz():
@@ -149,7 +149,7 @@ def favicon():
     return "", 204
 
 # -----------------------------------------------------------------------------
-# Ð“Ð¾Ð»Ð¾Ð²Ð½Ð° ÑÑ‚Ð¾Ñ€Ñ–Ð½ÐºÐ°
+# Main page
 # -----------------------------------------------------------------------------
 
 @app.route("/")
@@ -207,7 +207,7 @@ def index():
     .tag{color:var(--ok);font-weight:600;margin-left:auto}
     h2{margin:10px 0 12px;font-size:14px;letter-spacing:.12em;color:var(--muted)}
 
-    /* Ð´Ð²Ñ– ÐºÐ¾Ð»Ð¾Ð½ÐºÐ¸ */
+    /* Two columns */
     .cols{display:grid;grid-template-columns:1fr;gap:16px}
     @media (min-width:980px){ .cols{grid-template-columns:1fr 1fr} } /* balanced columns */
 
@@ -289,12 +289,12 @@ def index():
     section h3{margin:0 0 6px}
     ul{margin:8px 0 0 18px;padding:0}
 
-    /* Ñ‡Ð¸Ð¿Ð¸ Ð¹ ÐºÐ½Ð¾Ð¿ÐºÐ¸ Ð·Ð½Ð¸Ð·Ñƒ */
+    /* Chips and action buttons */
     .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
     .chip{
       display:inline-block;background:#f3f4f6;border:1px solid var(--border);color:#374151;
       font-size:12.5px;line-height:1;padding:7px 12px;border-radius:999px;font-weight:500;
-      user-select:none;pointer-events:none; /* Ð½Ðµ ÐºÐ»Ñ–ÐºÐ°Ñ”Ñ‚ÑŒÑÑ */
+      user-select:none;pointer-events:none; /* read-only */
     }
     .btn{
       border:1px solid var(--border);background:#fff;color:#fg;
@@ -303,7 +303,7 @@ def index():
     .btn:hover{border-color:var(--accent)}
     .btn:active{transform:translateY(.5px)}
 
-    /* Ð¼Ð¾Ð´Ð°Ð»ÐºÐ° */
+    /* modal */
     .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
     .modal{width:min(520px,100%);background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px}
     .modal h4{margin:0 0 8px;font-size:16px}
@@ -386,7 +386,7 @@ def index():
   <div class="wrap">
     <header>
       <div class="logo">KLD</div>
-      <h1>Kenorland Digitizing Server is running 🚀</h1>
+      <h1>Kenorland Digitizing Server is running</h1>
       <div class="tag">healthy</div>
     </header>
 
@@ -736,9 +736,15 @@ def get_dropbox_access_token() -> str:
 # -----------------------------------------------------------------------------
 # Stats storage (JSON in the same folder as this script)
 # -----------------------------------------------------------------------------
-STATS_BACKEND = "dropbox"
-STATS_DROPBOX_PATH = "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/project_stats.json"
-STATS_LOCAL_PATH = os.path.join(app.root_path, "project_stats.json")
+STATS_BACKEND = os.getenv("STATS_BACKEND", "file").strip().lower()
+STATS_DROPBOX_PATH = os.getenv(
+    "STATS_DROPBOX_PATH",
+    "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/project_stats.json",
+)
+STATS_LOCAL_PATH = os.getenv(
+    "STATS_LOCAL_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "stats", "project_stats.json")),
+)
 _stats_store: StatsStore | None = None
 
 
@@ -776,10 +782,18 @@ def track_asx_stats(action: str, count: int, success: bool) -> None:
         app.logger.warning(f"ASX stats update failed: {e}")
 
 def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
+    """Create folder if needed; ignore conflict when already created concurrently."""
     try:
         dbx.files_get_metadata(path)
+        return
     except dropbox.exceptions.ApiError:
+        pass
+
+    try:
         dbx.files_create_folder_v2(path)
+    except dropbox.exceptions.ApiError as e:
+        if "conflict" not in str(e).lower() and "folder" not in str(e).lower():
+            raise
 
 # -----------------------------------------------------------------------------
 # PDF helpers
@@ -883,7 +897,7 @@ def download_ar_generic(ar_number: str, province: str, project: str,
 # -------------------- ADD: Manitoba direct-download logic --------------------
 def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out: dict | None = None) -> int:
     """
-    Manitoba: Ð¿Ñ€ÑÐ¼Ðµ Ð·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÐµÐ½Ð½Ñ Ð¾Ð´Ð½Ð¾Ð³Ð¾ PDF:
+    Manitoba: direct download of a single PDF:
     https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf
     """
     token = get_dropbox_access_token()
@@ -893,7 +907,7 @@ def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out:
     instr = f"{base}/Instructions"
     srcdata = f"{base}/Source Data"
 
-    # Ð¡Ñ‚Ð²Ð¾Ñ€ÐµÐ½Ð½Ñ Ñ‚ÐµÐº Ñ‚Ð° ÐºÐ¾Ð¿Ñ–ÑŽÐ²Ð°Ð½Ð½Ñ ÑˆÐ°Ð±Ð»Ð¾Ð½Ñ–Ð² â€” Ñ–Ð´ÐµÐ½Ñ‚Ð¸Ñ‡Ð½Ð¾ Ñ–Ð½ÑˆÐ¸Ð¼ Ð¿Ñ€Ð¾Ð²Ñ–Ð½Ñ†Ñ–ÑÐ¼
+    # Create folders and copy templates (same flow as other provinces)
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
     template_copies = 0
@@ -918,7 +932,7 @@ def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out:
     if isinstance(stats_out, dict):
         stats_out["templates_copied"] = 1
 
-    # ÐŸÑ€ÑÐ¼Ð¸Ð¹ PDF Ð±ÐµÐ· ÑÑƒÑ„Ñ–ÐºÑÑ–Ð²
+    # Direct PDF URL without suffix permutations
     url = f"https://www.gov.mb.ca/data/em/application/assessment/{ar_number}.pdf"
     content = _try_get(url)
     if not content:
@@ -944,20 +958,20 @@ def _check_bearer(req) -> None:
 
 def _unlock_pdf_bytes(data: bytes) -> bytes:
     """
-    Ð—Ð½Ñ–Ð¼Ð°Ñ” owner-Ð¾Ð±Ð¼ÐµÐ¶ÐµÐ½Ð½Ñ Ñ‚Ð° Ð¿Ñ€Ð¸Ð±Ð¸Ñ€Ð°Ñ” ÑˆÐ¸Ñ„Ñ€ÑƒÐ²Ð°Ð½Ð½Ñ.
-    ÐŸÑ–Ð´Ñ‚Ñ€Ð¸Ð¼ÑƒÑ” ÐºÐµÐ¹Ñ Ñ–Ð· Ð¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¼ user-password ("").
-    Ð¯ÐºÑ‰Ð¾ ÑÐ¿Ñ€Ð°Ð²Ð´Ñ– Ð¿Ð¾Ñ‚Ñ€Ñ–Ð±ÐµÐ½ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ Ð½Ð° Ð²Ñ–Ð´ÐºÑ€Ð¸Ñ‚Ñ‚Ñ (Ð½ÐµÐ¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¹) Ð°Ð±Ð¾ ÑÑ‚Ð°Ð»Ð°ÑÑ Ð¿Ð¾Ð¼Ð¸Ð»ÐºÐ° â€” Ð¿Ð¾Ð²ÐµÑ€Ñ‚Ð°Ñ” Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð».
+    Removes owner restrictions and writes an unencrypted copy when possible.
+    Supports files that can be opened with an empty user password ("").
+    If a real non-empty user password is required or any error happens, return original bytes.
     """
     import io
     import pikepdf
 
-    # Ð¡Ð¿Ñ€Ð¾Ð±ÑƒÐ²Ð°Ñ‚Ð¸ Ð±ÐµÐ· Ð¿Ð°Ñ€Ð¾Ð»Ñ, Ð¿Ð¾Ñ‚Ñ–Ð¼ Ð· Ð¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¼ Ð¿Ð°Ñ€Ð¾Ð»ÐµÐ¼
+    # Try without password first, then with an empty password
     for pw in (None, ""):
         try:
             pdf = pikepdf.open(io.BytesIO(data), password=pw)
             try:
                 out = io.BytesIO()
-                # Ð’ÐÐ–Ð›Ð˜Ð’Ðž: Ð·Ð±ÐµÑ€Ñ–Ð³Ð°Ñ”Ð¼Ð¾ Ð‘Ð•Ð— encryption= â€” Ñ„Ð°Ð¹Ð» ÑÑ‚Ð°Ñ” Ð½ÐµÑˆÐ¸Ñ„Ñ€Ð¾Ð²Ð°Ð½Ð¸Ð¹ Ñ– Ð±ÐµÐ· "Enter password"
+                # IMPORTANT: save without encryption args to produce a plain, non-password PDF
                 pdf.save(out)
                 pdf.close()
                 return out.getvalue()
@@ -967,10 +981,10 @@ def _unlock_pdf_bytes(data: bytes) -> bytes:
                 except Exception:
                     pass
         except (pikepdf.PasswordError, getattr(pikepdf, "_qpdf", type("", (), {})) .__dict__.get("PasswordError", Exception)):
-            # Ð¿Ð¾Ñ‚Ñ€Ñ–Ð±ÐµÐ½ ÑÐ¿Ñ€Ð°Ð²Ð¶Ð½Ñ–Ð¹ user-password (Ð½ÐµÐ¿Ð¾Ñ€Ð¾Ð¶Ð½Ñ–Ð¹) â€” Ð¿Ñ€Ð¾Ð¿ÑƒÑÐºÐ°Ñ”Ð¼Ð¾ Ñ†Ð¸ÐºÐ»/Ð¿Ð¾Ð²ÐµÑ€Ð½ÐµÐ¼Ð¾ Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð»
+            # Real user password is required; keep original file
             continue
         except Exception:
-            # Ð±ÑƒÐ´ÑŒ-ÑÐºÐ° Ñ–Ð½ÑˆÐ° Ð¿Ð¾Ð¼Ð¸Ð»ÐºÐ° â€” Ð¿ÐµÑ€ÐµÑ…Ð¾Ð´Ð¸Ð¼Ð¾ Ð´Ð¾ Ð¿Ð¾Ð²ÐµÑ€Ð½ÐµÐ½Ð½Ñ Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð»Ñƒ
+            # Any other error: fall back to original bytes
             break
 
     return data
@@ -1100,29 +1114,29 @@ def asx_create_xlsx_rename_test():
 
     wb = Workbook()
 
-    # ÐŸÐµÑ€ÑˆÐ¸Ð¹ Ð°Ñ€ÐºÑƒÑˆ ÑÑ‚Ð²Ð¾Ñ€ÑŽÑ”Ñ‚ÑŒÑÑ Ð°Ð²Ñ‚Ð¾Ð¼Ð°Ñ‚Ð¸Ñ‡Ð½Ð¾
+    # The first worksheet is created automatically
     ws1 = wb.active
     ws1.title = 'Report_ID_Drilling'
 
-    # Ð”Ñ€ÑƒÐ³Ð¸Ð¹ ÑÑ‚Ð²Ð¾Ñ€ÑŽÑ”Ð¼Ð¾ Ð²Ñ€ÑƒÑ‡Ð½Ñƒ
+    # Create the second worksheet manually
     ws2 = wb.create_sheet('Report_ID_SurfaceGeochemistry')
 
-    # Ð¤Ð¾Ñ€Ð¼ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ñ– Ð½Ð°Ð·Ð²Ð¸
+    # Build new worksheet names
     drilling_name = f'{report_id}_Drilling'
     surface_name = f'{report_id}_SurfaceGeochemistry'
 
-    # Excel Ð¼Ð°Ñ” Ð¾Ð±Ð¼ÐµÐ¶ÐµÐ½Ð½Ñ 31 ÑÐ¸Ð¼Ð²Ð¾Ð» Ð½Ð° Ð½Ð°Ð·Ð²Ñƒ Ð°Ñ€ÐºÑƒÑˆÐ°
+    # Excel limits worksheet title length to 31 chars
     if len(drilling_name) > 31:
         drilling_name = drilling_name[:31]
 
     if len(surface_name) > 31:
         surface_name = surface_name[:31]
 
-    # ÐŸÐµÑ€ÐµÐ¹Ð¼ÐµÐ½Ð¾Ð²ÑƒÑ”Ð¼Ð¾
+    # Rename worksheets
     wb['Report_ID_Drilling'].title = drilling_name
     wb['Report_ID_SurfaceGeochemistry'].title = surface_name
 
-    # Ð—Ð±ÐµÑ€Ñ–Ð³Ð°Ñ‚Ð¸ Ñ„Ð°Ð¹Ð» Ð¿Ð¾ÐºÐ¸ Ð½Ðµ Ñ‚Ñ€ÐµÐ±Ð°, Ð°Ð»Ðµ Ð¿ÐµÑ€ÐµÐ²Ñ–Ñ€Ð¸Ð¼Ð¾, Ñ‰Ð¾ workbook Ð²Ð°Ð»Ñ–Ð´Ð½Ð¸Ð¹
+    # Save in memory to validate workbook structure
     output = BytesIO()
     wb.save(output)
 
@@ -1156,17 +1170,17 @@ def asx_create_xlsx_dropbox_test():
         return jsonify({"ok": False, "error": f"Dropbox auth failed: {str(e)}"}), 500
 
     try:
-        # 1. Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÑƒÑ”Ð¼Ð¾ ÑˆÐ°Ð±Ð»Ð¾Ð½ Ð· Dropbox
+        # 1. Download template from Dropbox
         file_bytes = dropbox_download_file(template_path, token)
 
-        # 2. Ð’Ñ–Ð´ÐºÑ€Ð¸Ð²Ð°Ñ”Ð¼Ð¾ workbook Ð· Ð¿Ð°Ð¼'ÑÑ‚Ñ–
+        # 2. Open workbook from memory
         wb = load_workbook(BytesIO(file_bytes))
 
-        # 3. Ð¤Ð¾Ñ€Ð¼ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ñ– Ð½Ð°Ð·Ð²Ð¸ Ð°Ñ€ÐºÑƒÑˆÑ–Ð²
+        # 3. Build new worksheet names
         drilling_name = safe_sheet_name(f'{report_id}_Drilling', 'Drilling')
         surface_name = safe_sheet_name(f'{report_id}_SurfaceGeochemistry', 'SurfaceGeochemistry')
 
-        # 4. ÐŸÐµÑ€ÐµÐ¹Ð¼ÐµÐ½Ð¾Ð²ÑƒÑ”Ð¼Ð¾, ÑÐºÑ‰Ð¾ Ð°Ñ€ÐºÑƒÑˆÑ– Ñ–ÑÐ½ÑƒÑŽÑ‚ÑŒ
+        # 4. Rename worksheets if present
         renamed = []
 
         if 'Report_ID_Drilling' in wb.sheetnames:
@@ -1197,12 +1211,12 @@ def asx_create_xlsx_dropbox_test():
 
             renamed.append(surface_name)
 
-        # 5. Ð—Ð±ÐµÑ€Ñ–Ð³Ð°Ñ”Ð¼Ð¾ Ð² Ð¿Ð°Ð¼'ÑÑ‚ÑŒ
+        # 5. Save workbook in memory
         output = BytesIO()
         wb.save(output)
         output.seek(0)
 
-        # 6. Ð—Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÑƒÑ”Ð¼Ð¾ Ð½Ð¾Ð²Ð¸Ð¹ Ñ„Ð°Ð¹Ð» Ð½Ð°Ð·Ð°Ð´ Ñƒ Dropbox
+        # 6. Upload the updated workbook back to Dropbox
         upload_result = dropbox_upload_file(output_path, output.getvalue(), token)
         track_asx_stats("xlsx_create", 1, True)
 
@@ -1227,4 +1241,5 @@ def asx_create_xlsx_dropbox_test():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
+
 
