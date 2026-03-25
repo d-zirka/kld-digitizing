@@ -390,6 +390,7 @@ def index():
     .stats-totals{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
     .stats-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-size:12px}
     .stats-controls{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+    .global-stats-controls{justify-content:center;margin-top:12px}
     .period-btn,.refresh-btn{
       border:1px solid var(--border);
       background:#fff;
@@ -488,19 +489,20 @@ def index():
       <span class="chip">ASX unlock API</span>
     </div>
 
+    <div class="stats-controls global-stats-controls">
+      <button class="period-btn" data-period="today">Today</button>
+      <button class="period-btn" data-period="7d">7D</button>
+      <button class="period-btn" data-period="30d">30D</button>
+      <button class="period-btn active" data-period="all">All</button>
+      <button class="refresh-btn" id="refreshStatsBtn" type="button">Refresh</button>
+    </div>
+
         <!-- ===== STATS SECTION ===== -->
     <section class="bg-white rounded-2xl shadow p-6" style="margin-top:16px; overflow-x:auto;">
       <div class="stats-head">
         <h2 class="text-xl font-semibold" style="margin:0;">AR Statistics</h2>
         <div class="stats-head-right">
           <div id="statsTotals" class="stats-totals"></div>
-          <div class="stats-controls">
-            <button class="period-btn" data-period="today">Today</button>
-            <button class="period-btn" data-period="7d">7D</button>
-            <button class="period-btn" data-period="30d">30D</button>
-            <button class="period-btn active" data-period="all">All</button>
-            <button class="refresh-btn" id="refreshStatsBtn" type="button">Refresh</button>
-          </div>
         </div>
       </div>
       <div id="statsKpis" class="stats-kpis"></div>
@@ -1360,4 +1362,3 @@ def asx_create_xlsx_dropbox_test():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
-
