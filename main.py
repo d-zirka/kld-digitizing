@@ -675,7 +675,8 @@ def index():
         } else {
           errors.style.display = 'block';
           errors.innerHTML = '<b>Recent errors:</b> ' + recentErrors.map(e => {
-            return '[' + fmt(e.ts) + '] ' + e.province;
+            const rid = (e && e.report_id) ? (' / ' + e.report_id) : '';
+            return '[' + fmt(e.ts) + '] ' + (e.province || '-') + rid;
           }).join(' | ');
         }
       }
@@ -822,12 +823,19 @@ def get_stats_store() -> StatsStore:
     return _stats_store
 
 
-def track_download_stats(province: str, downloaded_pdfs: int, templates_copied: int, success: bool) -> None:
+def track_download_stats(
+    province: str,
+    report_id: Optional[str],
+    downloaded_pdfs: int,
+    templates_copied: int,
+    success: bool,
+) -> None:
     if province not in PROVINCES:
         return
     try:
         get_stats_store().apply_download_event(
             province=province,
+            report_id=report_id,
             downloaded_pdfs=downloaded_pdfs,
             templates_copied=templates_copied,
             success=success,
@@ -1144,18 +1152,18 @@ def download_gm():
             _idempotency_finish(idem_key, payload, 400)
             return jsonify(payload), 400
         tpl = int(stats_out.get("templates_copied", 0) or 0)
-        track_download_stats(prov, cnt, tpl, True)
+        track_download_stats(prov, num, cnt, tpl, True)
         msg = f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded."
         payload = {"message": msg, "downloaded_pdfs": cnt, "templates_copied": tpl}
         _idempotency_finish(idem_key, payload, 200)
         return jsonify(payload), 200
     except requests.HTTPError as he:
-        track_download_stats(prov, cnt, tpl, False)
+        track_download_stats(prov, num, cnt, tpl, False)
         app.logger.error(f"HTTP error: {he}", exc_info=True)
         _idempotency_abort(idem_key)
         return jsonify(error=str(he)), 502
     except Exception as e:
-        track_download_stats(prov, cnt, tpl, False)
+        track_download_stats(prov, num, cnt, tpl, False)
         app.logger.error(f"Unexpected error: {e}", exc_info=True)
         _idempotency_abort(idem_key)
         return jsonify(error=str(e)), 500
@@ -1352,5 +1360,4 @@ def asx_create_xlsx_dropbox_test():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port)
-
 
