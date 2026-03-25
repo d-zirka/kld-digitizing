@@ -528,7 +528,7 @@ def index():
 
     <footer>
       <div>Powered by <b>Flask</b> &middot; <b>Render</b></div>
-      <div>Created by <b>Zirka</b> &middot; <b>chatGPT</b></div> &middot; <b>Codex</b></div>
+      <div>Created by <b>Zirka</b> &middot; <b>chatGPT</b> &middot; <b>Codex</b></div>
     </footer>
   </div>
 
