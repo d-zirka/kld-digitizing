@@ -800,7 +800,7 @@ def get_dropbox_access_token() -> str:
 STATS_BACKEND = os.getenv("STATS_BACKEND", "file").strip().lower()
 STATS_DROPBOX_PATH = os.getenv(
     "STATS_DROPBOX_PATH",
-    "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Stats/project_stats.json",
+    "/Zirka/OCTOGIT/DIGITIZING/GAppS/github/stats/project_stats.json",
 )
 STATS_LOCAL_PATH = os.getenv(
     "STATS_LOCAL_PATH",
