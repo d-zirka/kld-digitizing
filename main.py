@@ -39,6 +39,11 @@ app = Flask(__name__)
 IDEMPOTENCY_TTL_SECONDS = max(60, int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "900")))
 _idempotency_lock = threading.Lock()
 _idempotency_cache: dict[str, dict[str, object]] = {}
+_template_cache_lock = threading.Lock()
+_template_cache: dict[str, dict[str, object]] = {}
+ASX_TEMPLATE_CACHE_TTL_SECONDS = max(30, int(os.getenv("ASX_TEMPLATE_CACHE_TTL_SECONDS", "900")))
+ASX_TEMPLATE_REV_CHECK_SECONDS = max(10, int(os.getenv("ASX_TEMPLATE_REV_CHECK_SECONDS", "120")))
+ASX_APPLY_DROPDOWNS = os.getenv("ASX_APPLY_DROPDOWNS", "0").strip() == "1"
 
 
 def _idempotency_cleanup_unlocked() -> None:
@@ -107,6 +112,57 @@ def dropbox_download_file(dropbox_path, token):
         raise Exception(f'Dropbox download error {resp.status_code}: {resp.text}')
 
     return resp.content
+
+
+def dropbox_get_metadata(dropbox_path, token):
+    url = 'https://api.dropboxapi.com/2/files/get_metadata'
+    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+    payload = {'path': dropbox_path, 'include_deleted': False}
+    resp = requests.post(url, headers=headers, json=payload)
+    if resp.status_code != 200:
+        raise Exception(f'Dropbox metadata error {resp.status_code}: {resp.text}')
+    return resp.json()
+
+
+def dropbox_download_file_cached(dropbox_path, token):
+    now = time.time()
+    with _template_cache_lock:
+        entry = _template_cache.get(dropbox_path)
+        if entry and (now - float(entry.get("last_rev_check_ts", 0.0))) <= ASX_TEMPLATE_REV_CHECK_SECONDS:
+            cached = entry.get("bytes")
+            if isinstance(cached, (bytes, bytearray)):
+                return bytes(cached)
+
+    # Check template revision in Dropbox to auto-refresh cache when template changes.
+    current_rev = None
+    try:
+        md = dropbox_get_metadata(dropbox_path, token)
+        current_rev = str(md.get("rev") or "")
+    except Exception:
+        current_rev = None
+
+    with _template_cache_lock:
+        entry = _template_cache.get(dropbox_path)
+        if entry:
+            cached = entry.get("bytes")
+            cached_rev = str(entry.get("rev") or "")
+            ts = float(entry.get("ts", 0.0))
+            if current_rev and cached_rev and current_rev == cached_rev and isinstance(cached, (bytes, bytearray)):
+                entry["last_rev_check_ts"] = now
+                return bytes(cached)
+            if (now - ts) <= ASX_TEMPLATE_CACHE_TTL_SECONDS and isinstance(cached, (bytes, bytearray)):
+                entry["last_rev_check_ts"] = now
+                return bytes(cached)
+
+    data = dropbox_download_file(dropbox_path, token)
+    with _template_cache_lock:
+        _template_cache[dropbox_path] = {
+            "ts": now,
+            "last_rev_check_ts": now,
+            "rev": current_rev or "",
+            "bytes": data
+        }
+    return data
 
 
 def dropbox_upload_file(dropbox_path, file_bytes, token):
@@ -1292,8 +1348,8 @@ def asx_create_xlsx_dropbox_test():
         return jsonify({"ok": False, "error": f"Dropbox auth failed: {str(e)}"}), 500
 
     try:
-        # 1. Download template from Dropbox
-        file_bytes = dropbox_download_file(template_path, token)
+        # 1. Download template from Dropbox (in-memory cache to reduce latency)
+        file_bytes = dropbox_download_file_cached(template_path, token)
 
         # 2. Open workbook from memory
         wb = load_workbook(BytesIO(file_bytes))
@@ -1310,12 +1366,13 @@ def asx_create_xlsx_dropbox_test():
             ws_drill.title = drilling_name
             write_value_by_header(ws_drill, 'PDF_ID', report_id)
 
-            add_dropdown_to_column(ws_drill, 'Country', '=Info!$A$2:$A$100')
-            add_dropdown_to_column(ws_drill, 'UtmZone', '=Info!$B$2:$B$100')
-            add_dropdown_to_column(ws_drill, 'HoleType', '=Info!$C$2:$C$100')
-            add_dropdown_to_column(ws_drill, 'HoleSize', '=Info!$J$2:$J$350')
-            add_dropdown_to_column(ws_drill, 'SampleType', '=Info!$H$2:$H$100')
-            add_dropdown_to_column(ws_drill, 'Sample_Medium', '=Info!$G$2:$G$100')
+            if ASX_APPLY_DROPDOWNS:
+                add_dropdown_to_column(ws_drill, 'Country', '=Info!$A$2:$A$100')
+                add_dropdown_to_column(ws_drill, 'UtmZone', '=Info!$B$2:$B$100')
+                add_dropdown_to_column(ws_drill, 'HoleType', '=Info!$C$2:$C$100')
+                add_dropdown_to_column(ws_drill, 'HoleSize', '=Info!$J$2:$J$350')
+                add_dropdown_to_column(ws_drill, 'SampleType', '=Info!$H$2:$H$100')
+                add_dropdown_to_column(ws_drill, 'Sample_Medium', '=Info!$G$2:$G$100')
 
             renamed.append(drilling_name)
 
@@ -1324,12 +1381,13 @@ def asx_create_xlsx_dropbox_test():
             ws_surface.title = surface_name
             write_value_by_header(ws_surface, 'PDF_ID', report_id)
 
-            add_dropdown_to_column(ws_surface, 'Country', '=Info!$A$2:$A$100')
-            add_dropdown_to_column(ws_surface, 'UtmZone', '=Info!$B$2:$B$100')
-            add_dropdown_to_column(ws_surface, 'HoleType', '=Info!$C$2:$C$100')
-            add_dropdown_to_column(ws_surface, 'HoleSize', '=Info!$J$2:$J$350')
-            add_dropdown_to_column(ws_surface, 'SampleType', '=Info!$H$2:$H$100')
-            add_dropdown_to_column(ws_surface, 'Sample_Medium', '=Info!$G$2:$G$100')
+            if ASX_APPLY_DROPDOWNS:
+                add_dropdown_to_column(ws_surface, 'Country', '=Info!$A$2:$A$100')
+                add_dropdown_to_column(ws_surface, 'UtmZone', '=Info!$B$2:$B$100')
+                add_dropdown_to_column(ws_surface, 'HoleType', '=Info!$C$2:$C$100')
+                add_dropdown_to_column(ws_surface, 'HoleSize', '=Info!$J$2:$J$350')
+                add_dropdown_to_column(ws_surface, 'SampleType', '=Info!$H$2:$H$100')
+                add_dropdown_to_column(ws_surface, 'Sample_Medium', '=Info!$G$2:$G$100')
 
             renamed.append(surface_name)
 
@@ -1348,6 +1406,7 @@ def asx_create_xlsx_dropbox_test():
             "report_id": report_id,
             "template_path": template_path,
             "output_path": output_path,
+            "dropdowns_applied": ASX_APPLY_DROPDOWNS,
             "sheet_names": wb.sheetnames,
             "renamed": renamed,
             "dropbox_result": upload_result
