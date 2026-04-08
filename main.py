@@ -43,7 +43,7 @@ _template_cache_lock = threading.Lock()
 _template_cache: dict[str, dict[str, object]] = {}
 ASX_TEMPLATE_CACHE_TTL_SECONDS = max(30, int(os.getenv("ASX_TEMPLATE_CACHE_TTL_SECONDS", "900")))
 ASX_TEMPLATE_REV_CHECK_SECONDS = max(10, int(os.getenv("ASX_TEMPLATE_REV_CHECK_SECONDS", "120")))
-ASX_APPLY_DROPDOWNS = os.getenv("ASX_APPLY_DROPDOWNS", "0").strip() == "1"
+ASX_APPLY_DROPDOWNS = os.getenv("ASX_APPLY_DROPDOWNS", "1").strip() == "1"
 
 
 def _idempotency_cleanup_unlocked() -> None:
