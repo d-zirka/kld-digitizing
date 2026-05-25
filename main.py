@@ -4,6 +4,7 @@ import tempfile
 import json
 import logging
 import time
+import re
 import unicodedata
 import threading
 from typing import Optional, List
@@ -227,7 +228,7 @@ def normalize_asx_country_value(raw_country: str) -> str:
         return ""
 
     ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    key = " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in ascii_value).split())
+    key = " ".join(re.sub(r"[^a-zA-Z0-9]+", " ", ascii_value.lower()).split())
 
     aliases = {
         "cote d ivoire": "CIV",
@@ -241,6 +242,11 @@ def normalize_asx_country_value(raw_country: str) -> str:
         "burkinafaso": "Burkina Faso",
         "mali": "Mali",
     }
+
+    if "cote" in key and "ivoire" in key:
+        return "CIV"
+    if "ivory" in key and "coast" in key:
+        return "CIV"
 
     return aliases.get(key, value)
 
