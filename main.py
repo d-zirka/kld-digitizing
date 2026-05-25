@@ -4,6 +4,7 @@ import tempfile
 import json
 import logging
 import time
+import unicodedata
 import threading
 from typing import Optional, List
 from urllib.parse import urljoin, urlparse
@@ -44,6 +45,7 @@ _template_cache: dict[str, dict[str, object]] = {}
 ASX_TEMPLATE_CACHE_TTL_SECONDS = max(30, int(os.getenv("ASX_TEMPLATE_CACHE_TTL_SECONDS", "900")))
 ASX_TEMPLATE_REV_CHECK_SECONDS = max(10, int(os.getenv("ASX_TEMPLATE_REV_CHECK_SECONDS", "120")))
 ASX_APPLY_DROPDOWNS = os.getenv("ASX_APPLY_DROPDOWNS", "1").strip() == "1"
+ASX_COUNTRY_DROPDOWN_RANGE = "=Info!$A$2:$A$10"
 
 
 def _idempotency_cleanup_unlocked() -> None:
@@ -218,6 +220,29 @@ def add_dropdown_to_column(ws, header_name, formula1, header_row=1, start_row=2,
     ws.add_data_validation(dv)
     dv.add(f"{col_letter}{start_row}:{col_letter}{end_row}")
     return True
+
+def normalize_asx_country_value(raw_country: str) -> str:
+    value = str(raw_country or "").strip()
+    if not value:
+        return ""
+
+    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    key = " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in ascii_value).split())
+
+    aliases = {
+        "cote d ivoire": "CIV",
+        "cote divoire": "CIV",
+        "ivory coast": "CIV",
+        "civ": "CIV",
+        "ghana": "Ghana",
+        "guinea": "Guinea",
+        "liberia": "Liberia",
+        "burkina faso": "Burkina Faso",
+        "burkinafaso": "Burkina Faso",
+        "mali": "Mali",
+    }
+
+    return aliases.get(key, value)
 
 def write_value_by_header(ws, header_name, value, header_row=1, target_row=2):
     col_idx = find_column_by_header(ws, header_name, header_row)
@@ -1325,6 +1350,8 @@ def asx_create_xlsx_dropbox_test():
     report_id = str(data.get('report_id') or '').strip()
     template_path = str(data.get('template_path') or '').strip()
     output_path = str(data.get('output_path') or '').strip()
+    country_province = str(data.get('country_province') or data.get('country') or '').strip()
+    country_value = normalize_asx_country_value(country_province)
 
     if not report_id:
         payload = {"ok": False, "error": "report_id is required"}
@@ -1365,9 +1392,10 @@ def asx_create_xlsx_dropbox_test():
             ws_drill = wb['Report_ID_Drilling']
             ws_drill.title = drilling_name
             write_value_by_header(ws_drill, 'PDF_ID', report_id)
+            write_value_by_header(ws_drill, 'Country', country_value)
 
             if ASX_APPLY_DROPDOWNS:
-                add_dropdown_to_column(ws_drill, 'Country', '=Info!$A$2:$A$100')
+                add_dropdown_to_column(ws_drill, 'Country', ASX_COUNTRY_DROPDOWN_RANGE)
                 add_dropdown_to_column(ws_drill, 'UtmZone', '=Info!$B$2:$B$100')
                 add_dropdown_to_column(ws_drill, 'HoleType', '=Info!$C$2:$C$100')
                 add_dropdown_to_column(ws_drill, 'HoleSize', '=Info!$J$2:$J$350')
@@ -1380,9 +1408,10 @@ def asx_create_xlsx_dropbox_test():
             ws_surface = wb['Report_ID_SurfaceGeochemistry']
             ws_surface.title = surface_name
             write_value_by_header(ws_surface, 'PDF_ID', report_id)
+            write_value_by_header(ws_surface, 'Country', country_value)
 
             if ASX_APPLY_DROPDOWNS:
-                add_dropdown_to_column(ws_surface, 'Country', '=Info!$A$2:$A$100')
+                add_dropdown_to_column(ws_surface, 'Country', ASX_COUNTRY_DROPDOWN_RANGE)
                 add_dropdown_to_column(ws_surface, 'UtmZone', '=Info!$B$2:$B$100')
                 add_dropdown_to_column(ws_surface, 'HoleType', '=Info!$C$2:$C$100')
                 add_dropdown_to_column(ws_surface, 'HoleSize', '=Info!$J$2:$J$350')
@@ -1406,6 +1435,8 @@ def asx_create_xlsx_dropbox_test():
             "report_id": report_id,
             "template_path": template_path,
             "output_path": output_path,
+            "country_province": country_province,
+            "country_value": country_value,
             "dropdowns_applied": ASX_APPLY_DROPDOWNS,
             "sheet_names": wb.sheetnames,
             "renamed": renamed,
