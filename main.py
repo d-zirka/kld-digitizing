@@ -551,7 +551,7 @@ def index():
       <section>
         <h3>AR</h3>
         <ul>
-          <li>Download AR PDFs for <b>Quebec</b>, <b>Ontario</b>, <b>Manitoba</b></li>
+          <li>Download AR PDFs for <b>Quebec</b>, <b>Ontario</b>, <b>Manitoba</b>, <b>New Brunswick</b></li>
           <li>Create report structure & templates for <b>QC, ON, NB, MB, NU</b>:
             <ul>
               <li>Copy & rename <i>Instructions.xlsx</i></li>
@@ -1106,6 +1106,230 @@ def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out:
 # -----------------------------------------------------------------------------
 
 
+# -----------------------------------------------------------------------------
+# New Brunswick — PARIS (ASP.NET WebForms) downloader
+# -----------------------------------------------------------------------------
+_NB_BASE_URL   = "https://dnr-mrn.gnb.ca/ParisWeb/"
+_NB_SEARCH_URL = _NB_BASE_URL + "AssessmentReportSearch.aspx"
+_NB_DETAIL_URL = _NB_BASE_URL + "AssessmentReportDetails.aspx"
+_NB_DELAY      = 1.5   # polite pause between requests (seconds)
+_NB_TIMEOUT    = 90    # per-request timeout (seconds)
+# GNB uses an intermediate CA not in certifi — verified via session cert store
+_NB_SSL_VERIFY = False
+
+import urllib3 as _urllib3
+_urllib3.disable_warnings(_urllib3.exceptions.InsecureRequestWarning)
+
+
+def _nb_hidden(soup) -> dict:
+    """Extract all ASP.NET hidden fields (ViewState, EventValidation, …)."""
+    return {
+        inp["name"]: inp.get("value", "")
+        for inp in soup.find_all("input", type="hidden")
+        if inp.get("name")
+    }
+
+
+def _nb_filename(response, fallback: str) -> str:
+    """Derive filename from Content-Disposition, then fallback."""
+    cd = response.headers.get("Content-Disposition", "")
+    m = re.search(r'filename\*?=["\']?(?:UTF-8\'\')?([^"\';\r\n]+)', cd, re.I)
+    if m:
+        return m.group(1).strip().strip("\"'")
+    if fallback:
+        return fallback
+    ct = response.headers.get("Content-Type", "").split(";")[0].strip()
+    ext = {
+        "application/pdf": ".pdf",
+        "application/zip": ".zip",
+        "application/x-zip-compressed": ".zip",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/tiff": ".tif",
+        "application/msword": ".doc",
+    }.get(ct, ".dat")
+    return f"file_{int(time.time())}{ext}"
+
+
+def _nb_safe_name(s: str) -> str:
+    """Strip characters illegal in Windows/Dropbox file names."""
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(s)).strip(". ")
+
+
+def _nb_find_report_field(soup) -> Optional[str]:
+    """Return the name of the report-number text input on the search form."""
+    for name in ("report_num", "txtReportNumber", "ReportNumber"):
+        if soup.find("input", {"name": name}):
+            return name
+    for label in soup.find_all("label"):
+        if "report" in label.get_text(strip=True).lower():
+            for_id = label.get("for")
+            if for_id:
+                inp = soup.find("input", id=for_id)
+                if inp and inp.get("name"):
+                    return inp["name"]
+    for inp in soup.find_all("input", type=["text", "number"]):
+        if re.search(r"report", (inp.get("name", "") + inp.get("id", "")), re.I):
+            return inp.get("name")
+    return None
+
+
+def download_ar_nb(ar_number: str, province: str, project: str,
+                   stats_out: dict | None = None) -> int:
+    """
+    New Brunswick: downloads all digital files for *ar_number* from the PARIS
+    system (dnr-mrn.gnb.ca/ParisWeb/) via a 4-step ASP.NET WebForms flow, then
+    uploads each file to Dropbox under Source Data/.
+
+    Steps
+    -----
+    1. POST search form → results page
+    2. PostBack click on the report row → details page
+    3. Submit "List Digital Files" button → FileAdmin page
+    4. PostBack-download each file → upload to Dropbox
+    """
+    token = get_dropbox_access_token()
+    dbx = dropbox.Dropbox(token)
+
+    base    = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
+    instr   = f"{base}/Instructions"
+    srcdata = f"{base}/Source Data"
+
+    # ── Create folders and copy templates (same as all other provinces) ────────
+    for p in (base, instr, srcdata):
+        ensure_folder(dbx, p)
+    try:
+        dbx.files_copy_v2(
+            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
+            f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"NB instructions copy failed: {e}")
+    try:
+        dbx.files_copy_v2(
+            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
+            f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"NB geochemistry copy failed: {e}")
+    try:
+        dbx.files_copy_v2(
+            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
+            f"{base}/{ar_number}_DDH.gdb", autorename=False)
+    except dropbox.exceptions.ApiError as e:
+        app.logger.warning(f"NB DDH copy failed: {e}")
+    if isinstance(stats_out, dict):
+        stats_out["templates_copied"] = 1
+
+    # ── Dedicated session — ASP.NET needs consistent cookies across all steps ──
+    nb = requests.Session()
+    nb.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-CA,en;q=0.9",
+    })
+
+    def _get(url: str):
+        time.sleep(_NB_DELAY)
+        r = nb.get(url, timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+        r.raise_for_status()
+        return r
+
+    def _post(url: str, data: dict):
+        time.sleep(_NB_DELAY)
+        r = nb.post(url, data=data, timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+        r.raise_for_status()
+        return r
+
+    # ── Step 1: Search ─────────────────────────────────────────────────────────
+    r1 = _get(_NB_SEARCH_URL)
+    soup1 = BeautifulSoup(r1.text, "html.parser")
+
+    field = _nb_find_report_field(soup1)
+    if not field:
+        app.logger.error(f"NB: cannot find report-number input for {ar_number}")
+        return 0
+
+    submit_btn = next(
+        ({inp["name"]: inp.get("value", "Submit")}
+         for inp in soup1.find_all("input", type="submit") if inp.get("name")),
+        {}
+    )
+    r2 = _post(_NB_SEARCH_URL, {**_nb_hidden(soup1), field: ar_number, **submit_btn})
+    soup2 = BeautifulSoup(r2.text, "html.parser")
+
+    # ── Step 2: Click report row in results ────────────────────────────────────
+    row_link = next(
+        (a for a in soup2.find_all("a") if ar_number in a.get_text(strip=True)),
+        None
+    )
+    if not row_link:
+        app.logger.warning(f"NB: report {ar_number} not found in search results")
+        return 0
+
+    m = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", row_link.get("href", ""))
+    if m:
+        r3 = _post(r2.url, {**_nb_hidden(soup2),
+                             "__EVENTTARGET": m.group(1), "__EVENTARGUMENT": m.group(2)})
+    else:
+        r3 = _get(urljoin(r2.url, row_link.get("href", "")))
+    soup3 = BeautifulSoup(r3.text, "html.parser")
+
+    # ── Step 3: Click "List Digital Files" button ──────────────────────────────
+    list_btn = None
+    for inp in soup3.find_all("input", type="submit"):
+        val = inp.get("value", "").lower()
+        nm  = inp.get("name", "")
+        if "digital" in val or "pdf" in val or nm == "btnListPDFs":
+            list_btn = inp
+            break
+    if not list_btn:
+        app.logger.warning(f"NB: 'List Digital Files' button not found for {ar_number}")
+        return 0
+
+    r4 = _post(_NB_DETAIL_URL, {
+        **_nb_hidden(soup3),
+        list_btn.get("name", "btnListPDFs"): list_btn.get("value", "List Digital Files"),
+    })
+    soup4 = BeautifulSoup(r4.text, "html.parser")
+
+    # ── Step 4: Download each file and upload to Dropbox ──────────────────────
+    file_entries = [
+        (a.get_text(strip=True), mm.group(1), mm.group(2))
+        for a in soup4.find_all("a")
+        if a.get("href") and a.get_text(strip=True)
+        for mm in [re.search(r"__doPostBack\('([^']+)','([^']*)'\)", a["href"])]
+        if mm and ("$lnkBtn" in mm.group(1) or "lnkBtnName" in mm.group(1))
+    ]
+
+    if not file_entries:
+        app.logger.warning(f"NB: no downloadable files found for {ar_number}")
+        return 0
+
+    hidden4 = _nb_hidden(soup4)
+    count = 0
+    for label, target, arg in file_entries:
+        try:
+            time.sleep(_NB_DELAY)
+            rf = nb.post(r4.url,
+                         data={**hidden4, "__EVENTTARGET": target, "__EVENTARGUMENT": arg},
+                         stream=True, timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+            rf.raise_for_status()
+            if "text/html" in rf.headers.get("Content-Type", ""):
+                app.logger.warning(f"NB: PostBack returned HTML for '{label}', skipping")
+                continue
+            fname = _nb_safe_name(_nb_filename(rf, label))
+            dbx.files_upload(rf.content, f"{srcdata}/{fname}", mode=WriteMode.overwrite)
+            count += 1
+            app.logger.info(f"NB: uploaded '{fname}' ({len(rf.content):,} bytes)")
+        except Exception as e:
+            app.logger.error(f"NB: error downloading '{label}' for {ar_number}: {e}")
+
+    return count
+# -----------------------------------------------------------------------------
+
+
 ASX_DROPBOX_PREFIX = "/KENORLAND_DIGITIZING/ASX/2 - WORKING/"
 
 def _is_allowed_asx_path(path: str) -> bool:
@@ -1235,7 +1459,7 @@ def download_gm():
             blob = "https://prd-0420-geoontario-0000-blob-cge0eud7azhvfsf7.z01.azurefd.net/lrc-geology-documents/assessment"
             cnt = download_ar_generic(num, prov, proj, url, blob, stats_out=stats_out)
         elif prov == "New Brunswick":
-            cnt = download_ar_generic(num, prov, proj, stats_out=stats_out)
+            cnt = download_ar_nb(num, prov, proj, stats_out=stats_out)
         elif prov == "Nunavut":
             cnt = download_ar_generic(num, prov, proj, stats_out=stats_out)
         elif prov == "Manitoba":
