@@ -1112,8 +1112,8 @@ def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out:
 _NB_BASE_URL   = "https://dnr-mrn.gnb.ca/ParisWeb/"
 _NB_SEARCH_URL = _NB_BASE_URL + "AssessmentReportSearch.aspx"
 _NB_DETAIL_URL = _NB_BASE_URL + "AssessmentReportDetails.aspx"
-_NB_DELAY      = 1.5   # polite pause between requests (seconds)
-_NB_TIMEOUT    = 90    # per-request timeout (seconds)
+_NB_DELAY      = 0.5   # pause between requests (seconds); 1.5 is too slow for GAS 30s timeout
+_NB_TIMEOUT    = 25    # per-request timeout (seconds); keeps total well under 30s
 # GNB uses an intermediate CA not in certifi — verified via session cert store
 _NB_SSL_VERIFY = False
 
@@ -1314,7 +1314,7 @@ def download_ar_nb(ar_number: str, province: str, project: str,
             time.sleep(_NB_DELAY)
             rf = nb.post(r4.url,
                          data={**hidden4, "__EVENTTARGET": target, "__EVENTARGUMENT": arg},
-                         stream=True, timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+                         timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
             rf.raise_for_status()
             if "text/html" in rf.headers.get("Content-Type", ""):
                 app.logger.warning(f"NB: PostBack returned HTML for '{label}', skipping")
