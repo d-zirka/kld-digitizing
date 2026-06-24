@@ -1174,6 +1174,169 @@ def _nb_find_report_field(soup) -> Optional[str]:
     return None
 
 
+def _nb_parse_folder_entries(soup):
+    """
+    Separate files from folders using the Size (KB) column in the FileAdmin table.
+    Folders have no size value; files have a numeric KB value.
+
+    Table structure: [icon | Name | Last Modification | Size (KB)]
+
+    Also handles the self-reference edge case: when inside a subfolder the page
+    renders BOTH the parent listing AND the current folder's listing.  The parent
+    listing includes the current folder's own name with no size, which would cause
+    infinite recursion — we skip it by reading txtCurrentFolder.
+
+    Returns (files, folders) — each a list of (label, target, arg) tuples.
+    """
+    cf_inp = soup.find("input", {"name": "txtCurrentFolder"})
+    current_path = cf_inp["value"].replace("/", "\\") if cf_inp else ""
+    current_folder_name = current_path.rstrip("\\").split("\\")[-1] if current_path else ""
+
+    link_map = {}
+    for a in soup.find_all("a"):
+        href = a.get("href", "")
+        text = a.get_text(strip=True)
+        if not text or text == "(Parent Folder)":
+            continue
+        mm = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", href)
+        if mm and "$lnkBtn" in mm.group(1):
+            link_map[text] = (mm.group(1), mm.group(2))
+
+    files, folders = [], []
+    seen: set = set()
+
+    for tr in soup.find_all("tr"):
+        tds = tr.find_all("td")
+        if len(tds) < 4:
+            continue
+        a = tds[1].find("a")
+        if not a:
+            continue
+        name = a.get_text(strip=True)
+        if name == "(Parent Folder)" or name not in link_map or name in seen:
+            continue
+        seen.add(name)
+        target, arg = link_map[name]
+        if tds[3].get_text(strip=True):   # has KB value → file
+            files.append((name, target, arg))
+        else:                              # no size → folder
+            if name == current_folder_name:
+                continue                  # skip self-reference entry
+            folders.append((name, target, arg))
+
+    # Fallback: if table parsing found nothing, treat every lnkBtn link as a file
+    if not files and not folders and link_map:
+        files = [(name, t, a) for name, (t, a) in link_map.items()]
+
+    return files, folders
+
+
+def _nb_navigate_back(nb_session, sub_soup, fa_url: str):
+    """
+    Click '(Parent Folder)' to restore parent-level session state on the server.
+    Returns (parent_soup, parent_hidden) or (None, None) on failure.
+    """
+    parent_link = next(
+        (a for a in sub_soup.find_all("a") if a.get_text(strip=True) == "(Parent Folder)"),
+        None,
+    )
+    if not parent_link:
+        return None, None
+    mm = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", parent_link.get("href", ""))
+    if not mm:
+        return None, None
+    post_data = {**_nb_hidden(sub_soup),
+                 "__EVENTTARGET": mm.group(1), "__EVENTARGUMENT": mm.group(2)}
+    try:
+        time.sleep(_NB_DELAY)
+        r = nb_session.post(fa_url, data=post_data, timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+        r.raise_for_status()
+        parent_soup = BeautifulSoup(r.text, "html.parser")
+        return parent_soup, _nb_hidden(parent_soup)
+    except Exception as e:
+        app.logger.error(f"NB: navigate-back failed: {e}")
+        return None, None
+
+
+def _nb_download_folder(nb_session, dbx, soup, fa_url: str,
+                        dropbox_path: str, indent: str = "") -> int:
+    """
+    Recursive downloader for one FileAdmin folder view.
+
+    Strategy (mirrors ParisDownloader._download_folder from the local script):
+      1. Parse the Size column to separate files from folders — no extra requests.
+      2. Download ALL files at this level first (session state unchanged).
+      3. Navigate into each subfolder; navigate back with (Parent Folder) before
+         moving to the next sibling so the server session stays in sync.
+    """
+    files, folders = _nb_parse_folder_entries(soup)
+    hidden_fields  = _nb_hidden(soup)
+    count = 0
+
+    # ── 1. Download files at this level ───────────────────────────────────────
+    for label, target, arg in files:
+        post_data = {**hidden_fields, "__EVENTTARGET": target, "__EVENTARGUMENT": arg}
+        try:
+            time.sleep(_NB_DELAY)
+            rf = nb_session.post(fa_url, data=post_data,
+                                 timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+            rf.raise_for_status()
+            if "text/html" in rf.headers.get("Content-Type", ""):
+                app.logger.warning(f"NB:{indent} PostBack returned HTML for '{label}', skipping")
+                continue
+            fname = _nb_safe_name(_nb_filename(rf, label))
+            dbx.files_upload(rf.content, f"{dropbox_path}/{fname}", mode=WriteMode.overwrite)
+            count += 1
+            app.logger.info(f"NB:{indent} uploaded '{fname}' ({len(rf.content):,} bytes)")
+        except Exception as e:
+            app.logger.error(f"NB:{indent} error downloading '{label}': {e}")
+
+    # ── 2. Recurse into subfolders ─────────────────────────────────────────────
+    current_soup   = soup
+    current_hidden = hidden_fields
+
+    for i, (label, target, arg) in enumerate(folders):
+        app.logger.info(f"NB:{indent} [folder] {label}/")
+        post_data = {**current_hidden, "__EVENTTARGET": target, "__EVENTARGUMENT": arg}
+        try:
+            time.sleep(_NB_DELAY)
+            r = nb_session.post(fa_url, data=post_data,
+                                timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
+            r.raise_for_status()
+            ct = r.headers.get("Content-Type", "")
+
+            if "text/html" not in ct:
+                # Table misidentified it as a folder — save as file instead
+                app.logger.warning(f"NB:{indent}  '{label}' has no size but returned binary; saving as file")
+                fname = _nb_safe_name(_nb_filename(r, label))
+                dbx.files_upload(r.content, f"{dropbox_path}/{fname}", mode=WriteMode.overwrite)
+                count += 1
+                continue
+
+            sub_soup = BeautifulSoup(r.content, "html.parser")
+            sub_path = f"{dropbox_path}/{_nb_safe_name(label)}"
+            ensure_folder(dbx, sub_path)
+            count += _nb_download_folder(nb_session, dbx, sub_soup, fa_url,
+                                         sub_path, indent + "  ")
+
+            # Navigate back to restore parent session (needed for next sibling folder)
+            if i < len(folders) - 1:
+                back_soup, back_hidden = _nb_navigate_back(nb_session, sub_soup, fa_url)
+                if back_soup:
+                    current_soup   = back_soup
+                    current_hidden = back_hidden
+                else:
+                    app.logger.warning(
+                        f"NB: could not navigate back from '{label}'; "
+                        "remaining sibling folders may be skipped")
+                    break
+
+        except Exception as e:
+            app.logger.error(f"NB:{indent} error entering folder '{label}': {e}")
+
+    return count
+
+
 def download_ar_nb(ar_number: str, province: str, project: str,
                    stats_out: dict | None = None) -> int:
     """
@@ -1294,38 +1457,9 @@ def download_ar_nb(ar_number: str, province: str, project: str,
     })
     soup4 = BeautifulSoup(r4.text, "html.parser")
 
-    # ── Step 4: Download each file and upload to Dropbox ──────────────────────
-    file_entries = [
-        (a.get_text(strip=True), mm.group(1), mm.group(2))
-        for a in soup4.find_all("a")
-        if a.get("href") and a.get_text(strip=True)
-        for mm in [re.search(r"__doPostBack\('([^']+)','([^']*)'\)", a["href"])]
-        if mm and ("$lnkBtn" in mm.group(1) or "lnkBtnName" in mm.group(1))
-    ]
-
-    if not file_entries:
-        app.logger.warning(f"NB: no downloadable files found for {ar_number}")
-        return 0
-
-    hidden4 = _nb_hidden(soup4)
-    count = 0
-    for label, target, arg in file_entries:
-        try:
-            time.sleep(_NB_DELAY)
-            rf = nb.post(r4.url,
-                         data={**hidden4, "__EVENTTARGET": target, "__EVENTARGUMENT": arg},
-                         timeout=_NB_TIMEOUT, verify=_NB_SSL_VERIFY)
-            rf.raise_for_status()
-            if "text/html" in rf.headers.get("Content-Type", ""):
-                app.logger.warning(f"NB: PostBack returned HTML for '{label}', skipping")
-                continue
-            fname = _nb_safe_name(_nb_filename(rf, label))
-            dbx.files_upload(rf.content, f"{srcdata}/{fname}", mode=WriteMode.overwrite)
-            count += 1
-            app.logger.info(f"NB: uploaded '{fname}' ({len(rf.content):,} bytes)")
-        except Exception as e:
-            app.logger.error(f"NB: error downloading '{label}' for {ar_number}: {e}")
-
+    # ── Step 4: Recursively download all files/subfolders → Dropbox ───────────
+    count = _nb_download_folder(nb, dbx, soup4, r4.url, srcdata)
+    app.logger.info(f"NB: {count} file(s) uploaded for {ar_number}")
     return count
 # -----------------------------------------------------------------------------
 
