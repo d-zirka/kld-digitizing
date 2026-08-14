@@ -555,8 +555,8 @@ def index():
           <li>Create report structure & templates for <b>QC, ON, NB, MB, NU</b>:
             <ul>
               <li>Copy & rename <i>Instructions.xlsx</i></li>
-              <li>Copy & rename <i>Geochemistry.gdb</i></li>
-              <li>Copy & rename <i>DDH.gdb</i></li>
+              <li>Copy & rename <i>Geochemistry.gpkg</i></li>
+              <li>Copy & rename <i>DDH.gpkg</i></li>
             </ul>
           </li>
         </ul>
@@ -957,6 +957,46 @@ def ensure_folder(dbx: dropbox.Dropbox, path: str) -> None:
         if "conflict" not in str(e).lower() and "folder" not in str(e).lower():
             raise
 
+
+_AR_INSTRUCTIONS_TEMPLATE_ROOT = (
+    "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions"
+)
+
+
+def copy_ar_templates(
+    dbx: dropbox.Dropbox,
+    base: str,
+    instructions_folder: str,
+    ar_number: str,
+) -> None:
+    """Copy the instruction workbook and the current GeoPackage templates."""
+    templates = (
+        (
+            "01_Instructions.xlsx",
+            f"{instructions_folder}/{ar_number}_Instructions.xlsx",
+            "Instructions",
+        ),
+        (
+            "ReportID_Geochemistry.gpkg",
+            f"{base}/{ar_number}_Geochemistry.gpkg",
+            "Geochemistry",
+        ),
+        (
+            "ReportID_DDH.gpkg",
+            f"{base}/{ar_number}_DDH.gpkg",
+            "DDH",
+        ),
+    )
+    for template_name, destination, label in templates:
+        try:
+            dbx.files_copy_v2(
+                f"{_AR_INSTRUCTIONS_TEMPLATE_ROOT}/{template_name}",
+                destination,
+                autorename=False,
+            )
+        except dropbox.exceptions.ApiError as e:
+            app.logger.warning(f"{label} copy failed: {e}")
+
 # -----------------------------------------------------------------------------
 # PDF helpers
 # -----------------------------------------------------------------------------
@@ -995,25 +1035,7 @@ def download_ar_generic(ar_number: str, province: str, project: str,
     srcdata = f"{base}/Source Data"
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
-    template_copies = 0
-    try:
-        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
-                          f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
-        template_copies += 1
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"Instructions copy failed: {e}")
-    try:
-        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
-                          f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
-        template_copies += 1
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"Geochemistry copy failed: {e}")
-    try:
-        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
-                          f"{base}/{ar_number}_DDH.gdb", autorename=False)
-        template_copies += 1
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"DDH copy failed: {e}")
+    copy_ar_templates(dbx, base, instr, ar_number)
     if isinstance(stats_out, dict):
         stats_out["templates_copied"] = 1
     if not list_page_url:
@@ -1072,25 +1094,7 @@ def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out:
     # Create folders and copy templates (same flow as other provinces)
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
-    template_copies = 0
-    try:
-        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
-                          f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
-        template_copies += 1
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"Instructions copy failed: {e}")
-    try:
-        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
-                          f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
-        template_copies += 1
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"Geochemistry copy failed: {e}")
-    try:
-        dbx.files_copy_v2("/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
-                          f"{base}/{ar_number}_DDH.gdb", autorename=False)
-        template_copies += 1
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"DDH copy failed: {e}")
+    copy_ar_templates(dbx, base, instr, ar_number)
     if isinstance(stats_out, dict):
         stats_out["templates_copied"] = 1
 
@@ -1361,24 +1365,7 @@ def download_ar_nb(ar_number: str, province: str, project: str,
     # ── Create folders and copy templates (same as all other provinces) ────────
     for p in (base, instr, srcdata):
         ensure_folder(dbx, p)
-    try:
-        dbx.files_copy_v2(
-            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/01_Instructions.xlsx",
-            f"{instr}/{ar_number}_Instructions.xlsx", autorename=False)
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"NB instructions copy failed: {e}")
-    try:
-        dbx.files_copy_v2(
-            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_Geochemistry.gdb",
-            f"{base}/{ar_number}_Geochemistry.gdb", autorename=False)
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"NB geochemistry copy failed: {e}")
-    try:
-        dbx.files_copy_v2(
-            "/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/_Documents/Instructions/ReportID_DDH.gdb",
-            f"{base}/{ar_number}_DDH.gdb", autorename=False)
-    except dropbox.exceptions.ApiError as e:
-        app.logger.warning(f"NB DDH copy failed: {e}")
+    copy_ar_templates(dbx, base, instr, ar_number)
     if isinstance(stats_out, dict):
         stats_out["templates_copied"] = 1
 
