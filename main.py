@@ -7,6 +7,7 @@ import time
 import re
 import unicodedata
 import threading
+import zipfile
 from typing import Optional, List
 from urllib.parse import urljoin, urlparse
 from itertools import product
@@ -1117,9 +1118,47 @@ def sk_archive_url(ar_number: str) -> str:
     raise ValueError(f"Saskatchewan archive link not found for {ar_number}")
 
 
+def sk_archive_download_url(archive_url: str) -> str:
+    """Follow GeoDS's confirmation and asynchronous preparation pages."""
+    landing = session.get(archive_url, timeout=DEFAULT_TIMEOUT)
+    landing.raise_for_status()
+    if "application/zip" in landing.headers.get("Content-Type", "").lower():
+        return landing.url
+
+    button = BeautifulSoup(landing.text, "html.parser").find("button", class_="download-btn")
+    match = re.search(r"location\.href\s*=\s*['\"]([^'\"]+)['\"]", button.get("onclick", "")) if button else None
+    if not match:
+        raise ValueError("GeoDS confirmation page has no download button")
+    start_url = urljoin(landing.url, match.group(1))
+    if urlparse(start_url).netloc != urlparse(archive_url).netloc:
+        raise ValueError("GeoDS download button points to another host")
+
+    preparing = session.get(start_url, timeout=DEFAULT_TIMEOUT)
+    preparing.raise_for_status()
+    status_match = re.search(r"const\s+statusUrl\s*=\s*['\"]([^'\"]+)['\"]", preparing.text)
+    job_match = re.search(r"const\s+jobId\s*=\s*['\"]([a-fA-F0-9-]+)['\"]", preparing.text)
+    if not status_match or not job_match:
+        raise ValueError("GeoDS preparation page has no job status")
+    status_url = urljoin(preparing.url, status_match.group(1))
+    file_url = urljoin(preparing.url, "/download/file/" + job_match.group(1))
+
+    for attempt in range(12):
+        status_response = session.get(status_url, timeout=DEFAULT_TIMEOUT)
+        status_response.raise_for_status()
+        status = status_response.json()
+        state = status.get("status")
+        if state == "ready":
+            return file_url
+        if state in ("failed", "rejected", "cancelled"):
+            raise RuntimeError("GeoDS download failed: " + str(status.get("error") or state))
+        if attempt < 11:
+            time.sleep(1)
+    raise TimeoutError("GeoDS ZIP was not ready within the server request window")
+
+
 def download_ar_saskatchewan(ar_number: str, province: str, project: str,
                              stats_out: dict | None = None) -> int:
-    archive_url = sk_archive_url(ar_number)
+    archive_url = sk_archive_download_url(sk_archive_url(ar_number))
     dbx = dropbox.Dropbox(get_dropbox_access_token())
     base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
     instr, srcdata = f"{base}/Instructions", f"{base}/Source Data"
@@ -1133,10 +1172,19 @@ def download_ar_saskatchewan(ar_number: str, province: str, project: str,
     destination = f"{srcdata}/{ar_number}.zip"
     with session.get(archive_url, timeout=DEFAULT_TIMEOUT, stream=True) as response:
         response.raise_for_status()
+        if "application/zip" not in response.headers.get("Content-Type", "").lower():
+            raise ValueError("GeoDS returned a web page instead of a ZIP archive")
         with tempfile.TemporaryFile() as archive:
             for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
                 if chunk:
                     archive.write(chunk)
+            archive.seek(0)
+            if not zipfile.is_zipfile(archive):
+                raise ValueError("GeoDS returned an invalid ZIP archive")
+            archive.seek(0)
+            with zipfile.ZipFile(archive) as contents:
+                if not contents.infolist() or contents.testzip() is not None:
+                    raise ValueError("GeoDS ZIP is empty or contains a damaged file")
             archive.seek(0)
             chunk_size = 8 * 1024 * 1024
             first = archive.read(chunk_size)
