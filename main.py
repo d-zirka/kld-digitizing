@@ -1206,6 +1206,38 @@ def sk_checked_job(ar_number: str, job_id: str) -> dict:
     return status
 
 
+_SK_TRANSFERS_DIR = os.path.join(tempfile.gettempdir(), "kld_sk_transfers")
+
+
+def _sk_transfer_path(job_id: str) -> str:
+    if not re.fullmatch(r"[a-fA-F0-9-]{36}", job_id):
+        raise ValueError("Invalid GeoDS job ID")
+    os.makedirs(_SK_TRANSFERS_DIR, exist_ok=True)
+    return os.path.join(_SK_TRANSFERS_DIR, f"{job_id}.json")
+
+
+def _sk_transfer_write(job_id: str, state: dict) -> None:
+    path = _sk_transfer_path(job_id)
+    temporary = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    with open(temporary, "w", encoding="utf-8") as output:
+        json.dump(state, output)
+    os.replace(temporary, path)
+
+
+def _sk_transfer_run(number: str, project: str, job_id: str) -> None:
+    try:
+        file_url = f"https://geoscience-data-system.saskatchewan.ca/download/file/{job_id}"
+        download_ar_saskatchewan(number, "Saskatchewan", project, prepared_url=file_url)
+        track_download_stats("Saskatchewan", number, 0, 1, True, downloaded_archives=1)
+        _sk_transfer_write(job_id, dict(number=number, project=project,
+                                        status="complete", updated=time.time()))
+    except Exception as exc:
+        app.logger.error("Saskatchewan background transfer failed: %s", exc, exc_info=True)
+        track_download_stats("Saskatchewan", number, 0, 0, False)
+        _sk_transfer_write(job_id, dict(number=number, project=project,
+                                        status="failed", error=str(exc), updated=time.time()))
+
+
 @app.post("/download_sk")
 def download_sk():
     """Short, stateless stages so GeoDS and Dropbox can work asynchronously."""
@@ -1220,6 +1252,22 @@ def download_sk():
             return jsonify(job_id=sk_start_archive_job(number), status="processing"), 202
 
         job_id = str(data.get("job_id") or "")
+        if action == "save_status":
+            path = _sk_transfer_path(job_id)
+            if not os.path.exists(path):
+                return jsonify(error="Saskatchewan transfer was not started"), 404
+            with open(path, encoding="utf-8") as source:
+                transfer = json.load(source)
+            if transfer.get("number") != number or transfer.get("project") != project:
+                return jsonify(error="Saskatchewan transfer does not match this report"), 400
+            if transfer.get("status") == "failed":
+                return jsonify(error=transfer.get("error") or "Saskatchewan transfer failed"), 502
+            if transfer.get("status") == "complete":
+                return jsonify(status="complete", message="Downloaded Saskatchewan ZIP archive"), 200
+            if time.time() - float(transfer.get("updated", 0)) > 1800:
+                return jsonify(error="Saskatchewan transfer timed out"), 502
+            return jsonify(status="processing"), 200
+
         status = sk_checked_job(number, job_id)
         state = status.get("status")
         if state in ("failed", "rejected", "cancelled"):
@@ -1231,49 +1279,21 @@ def download_sk():
         if state != "ready":
             return jsonify(error="GeoDS archive is still preparing"), 409
 
-        dbx = dropbox.Dropbox(get_dropbox_access_token())
-        base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/Saskatchewan/{project}/{number}"
-        destination = f"{base}/Source Data/{number}.zip"
         if action == "save":
-            file_url = f"https://geoscience-data-system.saskatchewan.ca/download/file/{job_id}"
-            with session.get(file_url, timeout=DEFAULT_TIMEOUT, stream=True) as source:
-                source.raise_for_status()
-                if "application/zip" not in source.headers.get("Content-Type", "").lower():
-                    raise ValueError("GeoDS returned a web page instead of a ZIP archive")
-                if next(source.iter_content(chunk_size=4), b"") != b"PK\x03\x04":
-                    raise ValueError("GeoDS returned an invalid ZIP header")
-            for path in (base, f"{base}/Instructions", f"{base}/Source Data"):
-                ensure_folder(dbx, path)
-            copy_ar_templates(dbx, base, f"{base}/Instructions", number)
-            # A previous failed attempt may have left a small invalid file.
+            path = _sk_transfer_path(job_id)
+            initial = dict(number=number, project=project, status="processing", updated=time.time())
             try:
-                dbx.files_delete_v2(destination)
-            except dropbox.exceptions.ApiError as exc:
-                if "not_found" not in str(exc).lower():
-                    raise
-            result = dbx.files_save_url(destination, file_url)
-            if result.is_complete():
-                metadata = result.get_complete()
-                if metadata.size < 1024:
-                    raise ValueError("Dropbox saved an unexpectedly small archive")
-                track_download_stats("Saskatchewan", number, 0, 1, True, downloaded_archives=1)
-                return jsonify(status="complete", message="Downloaded Saskatchewan ZIP archive"), 200
-            return jsonify(status="processing", save_job_id=result.get_async_job_id()), 202
-
-        if action == "save_status":
-            save_job_id = str(data.get("save_job_id") or "")
-            if not save_job_id or len(save_job_id) > 200:
-                return jsonify(error="Invalid Dropbox job ID"), 400
-            result = dbx.files_save_url_check_job_status(save_job_id)
-            if result.is_failed():
-                return jsonify(error=f"Dropbox URL transfer failed: {result.get_failed()}"), 502
-            if not result.is_complete():
-                return jsonify(status="processing"), 200
-            metadata = result.get_complete()
-            if metadata.path_lower != destination.lower() or metadata.size < 1024:
-                return jsonify(error="Dropbox archive path or size is invalid"), 502
-            track_download_stats("Saskatchewan", number, 0, 1, True, downloaded_archives=1)
-            return jsonify(status="complete", message="Downloaded Saskatchewan ZIP archive"), 200
+                with open(path, "x", encoding="utf-8") as output:
+                    json.dump(initial, output)
+            except FileExistsError:
+                with open(path, encoding="utf-8") as source:
+                    existing = json.load(source)
+                if existing.get("number") != number or existing.get("project") != project:
+                    return jsonify(error="Saskatchewan transfer does not match this report"), 400
+                return jsonify(status=existing.get("status", "processing"), save_job_id=job_id), 202
+            worker = threading.Thread(target=_sk_transfer_run, args=(number, project, job_id), daemon=True)
+            worker.start()
+            return jsonify(status="processing", save_job_id=job_id), 202
         return jsonify(error="Invalid action"), 400
     except (requests.RequestException, dropbox.exceptions.DropboxException, ValueError) as exc:
         app.logger.error("Saskatchewan transfer %s failed: %s", action, exc, exc_info=True)
@@ -1282,8 +1302,9 @@ def download_sk():
 
 
 def download_ar_saskatchewan(ar_number: str, province: str, project: str,
-                             stats_out: dict | None = None) -> int:
-    archive_url = sk_archive_download_url(sk_archive_url(ar_number))
+                             stats_out: dict | None = None,
+                             prepared_url: str | None = None) -> int:
+    archive_url = prepared_url or sk_archive_download_url(sk_archive_url(ar_number))
     dbx = dropbox.Dropbox(get_dropbox_access_token())
     base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
     instr, srcdata = f"{base}/Instructions", f"{base}/Source Data"
@@ -1295,7 +1316,8 @@ def download_ar_saskatchewan(ar_number: str, province: str, project: str,
 
     # Dropbox's single upload has a size limit; sessions also handle large ZIPs.
     destination = f"{srcdata}/{ar_number}.zip"
-    with session.get(archive_url, timeout=DEFAULT_TIMEOUT, stream=True) as response:
+    archive_get = requests.get if prepared_url else session.get
+    with archive_get(archive_url, timeout=DEFAULT_TIMEOUT, stream=True) as response:
         response.raise_for_status()
         if "application/zip" not in response.headers.get("Content-Type", "").lower():
             raise ValueError("GeoDS returned a web page instead of a ZIP archive")
