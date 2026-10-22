@@ -26,7 +26,12 @@ import pikepdf
 from flask import Flask, request, jsonify, url_for, send_from_directory, render_template_string
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
-from stats_runtime_v2 import StatsStore, PROVINCES
+try:
+    from stats_runtime_v2 import StatsStore, PROVINCES
+except ModuleNotFoundError as exc:
+    if exc.name != "stats_runtime_v2":
+        raise
+    from stats_runtime import StatsStore, PROVINCES
 
 from io import BytesIO
 from openpyxl import Workbook
