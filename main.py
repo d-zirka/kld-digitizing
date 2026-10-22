@@ -9,7 +9,7 @@ import unicodedata
 import threading
 import zipfile
 from typing import Optional, List
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from itertools import product
 
 import requests
@@ -1199,7 +1199,9 @@ def sk_checked_job(ar_number: str, job_id: str) -> dict:
     response.raise_for_status()
     status = response.json()
     archive = urlparse(sk_archive_url(ar_number)).path.strip("/").split("/")
-    if len(archive) < 3 or status.get("bucket") != archive[-2] or status.get("prefix") != archive[-1]:
+    if (len(archive) < 3 or archive[0] != "download"
+            or status.get("bucket") != unquote(archive[1])
+            or status.get("prefix") != unquote("/".join(archive[2:]))):
         raise ValueError("GeoDS job does not match this assessment number")
     return status
 
