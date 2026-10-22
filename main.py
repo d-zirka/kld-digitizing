@@ -557,7 +557,9 @@ def index():
         <h3>AR</h3>
         <ul>
           <li>Download AR PDFs for <b>Quebec</b>, <b>Ontario</b>, <b>Manitoba</b>, <b>New Brunswick</b></li>
-          <li>Create report structure & templates for <b>QC, ON, NB, MB, NU</b>:
+          <li>Download <b>Saskatchewan</b> AR ZIP archives from GeoDS</li>
+          <li>Open Saskatchewan source archive links from the Tracking Sheet sidebar</li>
+          <li>Create report structure & templates for <b>QC, ON, NB, MB, NU, SK</b>:
             <ul>
               <li>Copy & rename <i>Instructions.xlsx</i></li>
               <li>Copy & rename <i>Geochemistry.gpkg</i></li>
