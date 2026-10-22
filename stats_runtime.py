@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-PROVINCES = ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut"]
+PROVINCES = ["Quebec", "Ontario", "Manitoba", "New Brunswick", "Nunavut", "Saskatchewan"]
 
 MAX_EVENTS = 5000
 
@@ -24,6 +24,7 @@ def parse_iso_utc(value: str) -> Optional[datetime]:
 def _province_template() -> Dict[str, Any]:
     return {
         "reports_downloaded": 0,
+        "archives_downloaded": 0,
         "templates_copied": 0,
         "requests": 0,
         "failed_requests": 0,
@@ -49,6 +50,7 @@ def default_state() -> Dict[str, Any]:
         "updated_at": now,
         "totals": {
             "reports_downloaded": 0,
+            "archives_downloaded": 0,
             "templates_copied": 0,
             "requests": 0,
             "failed_requests": 0,
@@ -70,7 +72,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     state["updated_at"] = str(raw.get("updated_at") or state["updated_at"])
 
     raw_totals = raw.get("totals") if isinstance(raw.get("totals"), dict) else {}
-    for k in ("reports_downloaded", "templates_copied", "requests", "failed_requests"):
+    for k in ("reports_downloaded", "archives_downloaded", "templates_copied", "requests", "failed_requests"):
         try:
             state["totals"][k] = int(raw_totals.get(k, 0) or 0)
         except Exception:
@@ -87,7 +89,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     for p in PROVINCES:
         incoming = raw_by_province.get(p) if isinstance(raw_by_province.get(p), dict) else {}
         row = _province_template()
-        for k in ("reports_downloaded", "templates_copied", "requests", "failed_requests"):
+        for k in ("reports_downloaded", "archives_downloaded", "templates_copied", "requests", "failed_requests"):
             try:
                 row[k] = int(incoming.get(k, 0) or 0)
             except Exception:
@@ -110,6 +112,7 @@ def normalize_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
                 "province": province,
                 "report_id": str(item.get("report_id") or "").strip() or None,
                 "downloaded_pdfs": max(0, int(item.get("downloaded_pdfs", 0) or 0)),
+                "downloaded_archives": max(0, int(item.get("downloaded_archives", 0) or 0)),
                 "templates_copied": max(0, int(item.get("templates_copied", 0) or 0)),
                 "success": bool(item.get("success", False)),
             }
@@ -238,10 +241,12 @@ class StatsStore:
         downloaded_pdfs: int,
         templates_copied: int,
         success: bool,
+        downloaded_archives: int = 0,
     ) -> Dict[str, Any]:
         province = province if province in PROVINCES else "Quebec"
         report_id = str(report_id or "").strip() or None
         downloaded_pdfs = max(0, int(downloaded_pdfs or 0))
+        downloaded_archives = max(0, int(downloaded_archives or 0))
         templates_copied = max(0, int(templates_copied or 0))
 
         def mutate(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -258,6 +263,9 @@ class StatsStore:
             row["reports_downloaded"] += downloaded_pdfs
             state["totals"]["reports_downloaded"] += downloaded_pdfs
 
+            row["archives_downloaded"] += downloaded_archives
+            state["totals"]["archives_downloaded"] += downloaded_archives
+
             row["templates_copied"] += templates_copied
             state["totals"]["templates_copied"] += templates_copied
 
@@ -269,6 +277,7 @@ class StatsStore:
                     "province": province,
                     "report_id": report_id,
                     "downloaded_pdfs": downloaded_pdfs,
+                    "downloaded_archives": downloaded_archives,
                     "templates_copied": templates_copied,
                     "success": bool(success),
                 }
@@ -378,6 +387,7 @@ class StatsStore:
 
         totals = {
             "reports_downloaded": 0,
+            "archives_downloaded": 0,
             "templates_copied": 0,
             "requests": 0,
             "failed_requests": 0,
@@ -390,6 +400,8 @@ class StatsStore:
             totals["requests"] += 1
             row["reports_downloaded"] += int(ev["downloaded_pdfs"])
             totals["reports_downloaded"] += int(ev["downloaded_pdfs"])
+            row["archives_downloaded"] += int(ev["downloaded_archives"])
+            totals["archives_downloaded"] += int(ev["downloaded_archives"])
             row["templates_copied"] += int(ev["templates_copied"])
             totals["templates_copied"] += int(ev["templates_copied"])
             if not ev["success"]:
@@ -399,10 +411,14 @@ class StatsStore:
 
         labels = PROVINCES[:]
         pdf_values = [by_province[p]["reports_downloaded"] for p in labels]
+        archive_values = [by_province[p]["archives_downloaded"] for p in labels]
         template_values = [by_province[p]["templates_copied"] for p in labels]
 
-        top_province = max(labels, key=lambda p: (by_province[p]["reports_downloaded"], by_province[p]["requests"]))
-        if by_province[top_province]["reports_downloaded"] == 0:
+        top_province = max(labels, key=lambda p: (
+            by_province[p]["reports_downloaded"] + by_province[p]["archives_downloaded"],
+            by_province[p]["requests"],
+        ))
+        if by_province[top_province]["reports_downloaded"] + by_province[top_province]["archives_downloaded"] == 0:
             top_province = None
 
         last_activity = filtered[-1] if filtered else None
@@ -443,6 +459,7 @@ class StatsStore:
         return {
             "labels": labels,
             "values": pdf_values,
+            "archive_values": archive_values,
             "templates_values": template_values,
             "tracking_started_at": norm["tracking_started_at"],
             "updated_at": norm["updated_at"],
@@ -451,6 +468,7 @@ class StatsStore:
             "by_province": by_province,
             "kpis": {
                 "pdf_total": totals["reports_downloaded"],
+                "zip_total": totals["archives_downloaded"],
                 "reports_total": totals["templates_copied"],
                 "requests_total": totals["requests"],
                 "failed_total": totals["failed_requests"],
