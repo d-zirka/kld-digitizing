@@ -1169,6 +1169,116 @@ def sk_archive_download_url(archive_url: str) -> str:
     raise TimeoutError("GeoDS ZIP was not ready within the server request window")
 
 
+def sk_start_archive_job(ar_number: str) -> str:
+    """Start GeoDS packaging without keeping a Render worker waiting for it."""
+    archive_url = sk_archive_url(ar_number)
+    landing = session.get(archive_url, timeout=DEFAULT_TIMEOUT)
+    landing.raise_for_status()
+    button = BeautifulSoup(landing.text, "html.parser").find("button", class_="download-btn")
+    match = re.search(r"location\.href\s*=\s*['\"]([^'\"]+)['\"]", button.get("onclick", "")) if button else None
+    if not match:
+        raise ValueError("GeoDS confirmation page has no download button")
+    start_url = urljoin(landing.url, match.group(1))
+    if urlparse(start_url).netloc != urlparse(archive_url).netloc:
+        raise ValueError("GeoDS download button points to another host")
+    preparing = session.get(start_url, timeout=DEFAULT_TIMEOUT)
+    preparing.raise_for_status()
+    job = re.search(r"const\s+jobId\s*=\s*['\"]([a-fA-F0-9-]+)['\"]", preparing.text)
+    if not job:
+        raise ValueError("GeoDS preparation page has no job ID")
+    return job.group(1)
+
+
+def sk_checked_job(ar_number: str, job_id: str) -> dict:
+    if not re.fullmatch(r"[a-fA-F0-9-]{36}", job_id):
+        raise ValueError("Invalid GeoDS job ID")
+    response = session.get(
+        f"https://geoscience-data-system.saskatchewan.ca/widgets-api/download/status/{job_id}",
+        timeout=DEFAULT_TIMEOUT,
+    )
+    response.raise_for_status()
+    status = response.json()
+    archive = urlparse(sk_archive_url(ar_number)).path.strip("/").split("/")
+    if len(archive) < 3 or status.get("bucket") != archive[-2] or status.get("prefix") != archive[-1]:
+        raise ValueError("GeoDS job does not match this assessment number")
+    return status
+
+
+@app.post("/download_sk")
+def download_sk():
+    """Short, stateless stages so GeoDS and Dropbox can work asynchronously."""
+    data = request.get_json(silent=True) or {}
+    number = str(data.get("ar_number") or "").strip()
+    project = str(data.get("project") or "").strip()
+    action = str(data.get("action") or "start")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", number) or not project or "/" in project or "\\" in project:
+        return jsonify(error="Invalid assessment number or project"), 400
+    try:
+        if action == "start":
+            return jsonify(job_id=sk_start_archive_job(number), status="processing"), 202
+
+        job_id = str(data.get("job_id") or "")
+        status = sk_checked_job(number, job_id)
+        state = status.get("status")
+        if state in ("failed", "rejected", "cancelled"):
+            track_download_stats("Saskatchewan", number, 0, 0, False)
+            return jsonify(error=str(status.get("error") or state)), 502
+        if action == "geo_status":
+            return jsonify(status=state, processed_bytes=status.get("processedBytes"),
+                           total_bytes=status.get("totalBytes")), 200
+        if state != "ready":
+            return jsonify(error="GeoDS archive is still preparing"), 409
+
+        dbx = dropbox.Dropbox(get_dropbox_access_token())
+        base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/Saskatchewan/{project}/{number}"
+        destination = f"{base}/Source Data/{number}.zip"
+        if action == "save":
+            file_url = f"https://geoscience-data-system.saskatchewan.ca/download/file/{job_id}"
+            with session.get(file_url, timeout=DEFAULT_TIMEOUT, stream=True) as source:
+                source.raise_for_status()
+                if "application/zip" not in source.headers.get("Content-Type", "").lower():
+                    raise ValueError("GeoDS returned a web page instead of a ZIP archive")
+                if next(source.iter_content(chunk_size=4), b"") != b"PK\x03\x04":
+                    raise ValueError("GeoDS returned an invalid ZIP header")
+            for path in (base, f"{base}/Instructions", f"{base}/Source Data"):
+                ensure_folder(dbx, path)
+            copy_ar_templates(dbx, base, f"{base}/Instructions", number)
+            # A previous failed attempt may have left a small invalid file.
+            try:
+                dbx.files_delete_v2(destination)
+            except dropbox.exceptions.ApiError as exc:
+                if "not_found" not in str(exc).lower():
+                    raise
+            result = dbx.files_save_url(destination, file_url)
+            if result.is_complete():
+                metadata = result.get_complete()
+                if metadata.size < 1024:
+                    raise ValueError("Dropbox saved an unexpectedly small archive")
+                track_download_stats("Saskatchewan", number, 0, 1, True, downloaded_archives=1)
+                return jsonify(status="complete", message="Downloaded Saskatchewan ZIP archive"), 200
+            return jsonify(status="processing", save_job_id=result.get_async_job_id()), 202
+
+        if action == "save_status":
+            save_job_id = str(data.get("save_job_id") or "")
+            if not save_job_id or len(save_job_id) > 200:
+                return jsonify(error="Invalid Dropbox job ID"), 400
+            result = dbx.files_save_url_check_job_status(save_job_id)
+            if result.is_failed():
+                return jsonify(error=f"Dropbox URL transfer failed: {result.get_failed()}"), 502
+            if not result.is_complete():
+                return jsonify(status="processing"), 200
+            metadata = result.get_complete()
+            if metadata.path_lower != destination.lower() or metadata.size < 1024:
+                return jsonify(error="Dropbox archive path or size is invalid"), 502
+            track_download_stats("Saskatchewan", number, 0, 1, True, downloaded_archives=1)
+            return jsonify(status="complete", message="Downloaded Saskatchewan ZIP archive"), 200
+        return jsonify(error="Invalid action"), 400
+    except (requests.RequestException, dropbox.exceptions.DropboxException, ValueError) as exc:
+        app.logger.error("Saskatchewan transfer %s failed: %s", action, exc, exc_info=True)
+        track_download_stats("Saskatchewan", number, 0, 0, False)
+        return jsonify(error=str(exc)), 502
+
+
 def download_ar_saskatchewan(ar_number: str, province: str, project: str,
                              stats_out: dict | None = None) -> int:
     archive_url = sk_archive_download_url(sk_archive_url(ar_number))
