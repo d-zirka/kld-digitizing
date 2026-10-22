@@ -685,6 +685,7 @@ def index():
       const data = await res.json();
       const labels = data.labels || [];
       const values = data.values || [];
+      const archiveValues = data.archive_values || [];
       const templateValues = data.templates_values || [];
 
       const ctx = document.getElementById('projChart');
@@ -707,6 +708,13 @@ def index():
               data: values,
               backgroundColor: '#FFD700',
               borderColor: '#FFD700',
+              borderWidth: 1
+            },
+            {
+              label: 'ZIP downloaded',
+              data: archiveValues,
+              backgroundColor: '#F59E0B',
+              borderColor: '#F59E0B',
               borderWidth: 1
             },
             {
@@ -753,6 +761,7 @@ def index():
       if (totals && data.totals) {
         totals.innerHTML =
           '<span class="stats-box">PDF total: <b>' + (data.totals.reports_downloaded || 0) + '</b></span>' +
+          '<span class="stats-box">ZIP total: <b>' + (data.totals.archives_downloaded || 0) + '</b></span>' +
           '<span class="stats-box">Folders total (reports): <b>' + (data.totals.templates_copied || 0) + '</b></span>' +
           '<span class="stats-box">Requests: <b>' + (data.totals.requests || 0) + '</b></span>' +
           '<span class="stats-box">Failed: <b>' + (data.totals.failed_requests || 0) + '</b></span>';
@@ -930,17 +939,21 @@ def track_download_stats(
     downloaded_pdfs: int,
     templates_copied: int,
     success: bool,
+    downloaded_archives: int = 0,
 ) -> None:
     if province not in PROVINCES:
         return
     try:
-        get_stats_store().apply_download_event(
+        event = dict(
             province=province,
             report_id=report_id,
             downloaded_pdfs=downloaded_pdfs,
             templates_copied=templates_copied,
             success=success,
         )
+        if "Saskatchewan" in PROVINCES:
+            event["downloaded_archives"] = downloaded_archives
+        get_stats_store().apply_download_event(**event)
     except Exception as e:
         app.logger.warning(f"Stats update failed: {e}")
 
@@ -1719,7 +1732,10 @@ def download_gm():
             _idempotency_finish(idem_key, payload, 400)
             return jsonify(payload), 400
         tpl = int(stats_out.get("templates_copied", 0) or 0)
-        track_download_stats(prov, num, 0 if prov == "Saskatchewan" else cnt, tpl, True)
+        track_download_stats(
+            prov, num, 0 if prov == "Saskatchewan" else cnt, tpl, True,
+            downloaded_archives=cnt if prov == "Saskatchewan" else 0,
+        )
         msg = ("Downloaded Saskatchewan ZIP archive" if prov == "Saskatchewan" else
                f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded.")
         payload = {"message": msg, "downloaded_pdfs": 0 if prov == "Saskatchewan" else cnt,
