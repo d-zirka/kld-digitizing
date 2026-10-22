@@ -26,7 +26,7 @@ import pikepdf
 from flask import Flask, request, jsonify, url_for, send_from_directory, render_template_string
 from bs4 import BeautifulSoup
 from werkzeug.exceptions import HTTPException
-from stats_runtime import StatsStore, PROVINCES
+from stats_runtime_v2 import StatsStore, PROVINCES
 
 from io import BytesIO
 from openpyxl import Workbook
@@ -1078,6 +1078,78 @@ def download_ar_generic(ar_number: str, province: str, project: str,
     return count
 
 
+_SK_QUERY_URL = (
+    "https://geoscience-data-system.saskatchewan.ca/arcgis/rest/services/"
+    "P_GeoDS_AssessmentPage_EM/MapServer/20/query"
+)
+
+
+def sk_archive_url(ar_number: str) -> str:
+    """Resolve the current GeoDS archive rather than guessing a ZIP URL."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", ar_number):
+        raise ValueError("Invalid Saskatchewan assessment number")
+    unpadded = re.sub(r"^([A-Za-z]+)0+(\d+)$", r"\1\2", ar_number)
+    where = (
+        f"SYSTEM_ASSMNT_FILE_NUM='{ar_number}' OR "
+        f"ASSMNT_FILE_NUM='{unpadded}'"
+    )
+    response = session.get(_SK_QUERY_URL, params={
+        "f": "json", "where": where,
+        "outFields": "SYSTEM_ASSMNT_FILE_NUM,ASSMNT_FILE_NUM,ASSMNT_DWNLD_LNK",
+        "returnGeometry": "false",
+    }, timeout=DEFAULT_TIMEOUT)
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("error"):
+        raise RuntimeError(f"GeoDS query failed: {payload['error']}")
+    for feature in payload.get("features", []):
+        attrs = feature.get("attributes") or {}
+        url = str(attrs.get("ASSMNT_DWNLD_LNK") or "").strip()
+        if url and urlparse(url).scheme == "https":
+            return url
+    raise ValueError(f"Saskatchewan archive link not found for {ar_number}")
+
+
+def download_ar_saskatchewan(ar_number: str, province: str, project: str,
+                             stats_out: dict | None = None) -> int:
+    archive_url = sk_archive_url(ar_number)
+    dbx = dropbox.Dropbox(get_dropbox_access_token())
+    base = f"/KENORLAND_DIGITIZING/ASSESSMENT_REPORTS/1 - NEW REPORTS/{province}/{project}/{ar_number}"
+    instr, srcdata = f"{base}/Instructions", f"{base}/Source Data"
+    for path in (base, instr, srcdata):
+        ensure_folder(dbx, path)
+    copy_ar_templates(dbx, base, instr, ar_number)
+    if isinstance(stats_out, dict):
+        stats_out["templates_copied"] = 1
+
+    # Dropbox's single upload has a size limit; sessions also handle large ZIPs.
+    destination = f"{srcdata}/{ar_number}.zip"
+    with session.get(archive_url, timeout=DEFAULT_TIMEOUT, stream=True) as response:
+        response.raise_for_status()
+        with tempfile.TemporaryFile() as archive:
+            for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
+                if chunk:
+                    archive.write(chunk)
+            archive.seek(0)
+            chunk_size = 8 * 1024 * 1024
+            first = archive.read(chunk_size)
+            if not first:
+                raise ValueError(f"Empty Saskatchewan archive for {ar_number}")
+            upload = dbx.files_upload_session_start(first)
+            cursor = dropbox.files.UploadSessionCursor(session_id=upload.session_id, offset=len(first))
+            while True:
+                chunk = archive.read(chunk_size)
+                if not chunk:
+                    break
+                dbx.files_upload_session_append_v2(chunk, cursor)
+                cursor.offset += len(chunk)
+            dbx.files_upload_session_finish(
+                b"", cursor,
+                dropbox.files.CommitInfo(path=destination, mode=WriteMode.overwrite),
+            )
+    return 1
+
+
 # -------------------- ADD: Manitoba direct-download logic --------------------
 def download_ar_manitoba(ar_number: str, province: str, project: str, stats_out: dict | None = None) -> int:
     """
@@ -1585,14 +1657,19 @@ def download_gm():
             cnt = download_ar_generic(num, prov, proj, stats_out=stats_out)
         elif prov == "Manitoba":
             cnt = download_ar_manitoba(num, prov, proj, stats_out=stats_out)
+        elif prov == "Saskatchewan":
+            cnt = download_ar_saskatchewan(num, prov, proj, stats_out=stats_out)
         else:
             payload = {"error": "Invalid province or AR#"}
             _idempotency_finish(idem_key, payload, 400)
             return jsonify(payload), 400
         tpl = int(stats_out.get("templates_copied", 0) or 0)
-        track_download_stats(prov, num, cnt, tpl, True)
-        msg = f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded."
-        payload = {"message": msg, "downloaded_pdfs": cnt, "templates_copied": tpl}
+        track_download_stats(prov, num, 0 if prov == "Saskatchewan" else cnt, tpl, True)
+        msg = ("Downloaded Saskatchewan ZIP archive" if prov == "Saskatchewan" else
+               f"Downloaded {cnt} PDFs" if cnt > 0 else "Folders created. No PDFs downloaded.")
+        payload = {"message": msg, "downloaded_pdfs": 0 if prov == "Saskatchewan" else cnt,
+                   "downloaded_archives": cnt if prov == "Saskatchewan" else 0,
+                   "templates_copied": tpl}
         _idempotency_finish(idem_key, payload, 200)
         return jsonify(payload), 200
     except requests.HTTPError as he:
