@@ -1392,8 +1392,8 @@ _NB_SEARCH_URL = _NB_BASE_URL + "AssessmentReportSearch.aspx"
 _NB_DETAIL_URL = _NB_BASE_URL + "AssessmentReportDetails.aspx"
 _NB_DELAY      = 0.5   # pause between requests (seconds); 1.5 is too slow for GAS 30s timeout
 _NB_TIMEOUT    = 25    # per-request timeout (seconds); keeps total well under 30s
-# GNB uses an intermediate CA not in certifi — verified via session cert store
-_NB_SSL_VERIFY = False
+# GNB chain (Sectigo EV R36 -> Root R46) verifies against certifi, so verification is on.
+_NB_SSL_VERIFY = True
 
 import urllib3 as _urllib3
 _urllib3.disable_warnings(_urllib3.exceptions.InsecureRequestWarning)
